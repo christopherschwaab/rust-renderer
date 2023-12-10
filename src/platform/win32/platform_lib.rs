@@ -161,7 +161,6 @@ impl MutableBitmapMemory {
     //}
 }
 
-
 pub struct AppContext {
     pub running: bool,
     bitmap_info: Gdi::BITMAPINFO,

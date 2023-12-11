@@ -45,6 +45,12 @@ impl<T, const N: usize> From<[[T; N]; 3]> for Triangle<T, N> {
     }
 }
 
+impl<T> Coord<T, 3> where T: Copy {
+    pub fn x(&self) -> T { self.0[0] }
+    pub fn y(&self) -> T { self.0[1] }
+    pub fn z(&self) -> T { self.0[2] }
+}
+
 impl<T> Coord<T, 2> where T: Copy {
     pub fn x(&self) -> T { self.0[0] }
     pub fn y(&self) -> T { self.0[1] }
@@ -81,6 +87,16 @@ impl<T> Triangle<T, 2> where T: Ord + Copy {
     }
 }
 
+fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f32) -> Coord<i32, 2> {
+    // Eye at p looking at v: t*p + (1 - t)*v
+    // TODO(chris): rotation
+    let t = focal_length / (p.z() - v.z());
+    Coord([
+        (t * v.x() + (1.0 - t) * p.x()).round() as i32,
+        (t * v.y() + (1.0 - t) * p.y()).round() as i32,
+    ])
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -101,5 +117,24 @@ mod test {
 
         let t1: Triangle<u32, 2> = [[8, 4], [6, 12], [10, 5]].into();
         assert_eq!([Coord([6, 4]), Coord([10, 12])], t1.bounding_box());
+    }
+}
+
+pub fn update_fb(fb: &mut Vec<u32>, fb_width: usize, observer_position: &Coord<f32, 3>, focal_length: f32) {
+    let t0: Triangle<f32, 3> = [[10.0, 10.0, 0.0], [10.0, 100.0, 0.0], [100.0, 10.0, 0.0]].into();
+    let projected_tri: Triangle<i32, 2> = Triangle([
+        project_perspective(&t0.0[0], observer_position, focal_length),
+        project_perspective(&t0.0[1], observer_position, focal_length),
+        project_perspective(&t0.0[2], observer_position, focal_length),
+    ]);
+    let bb = projected_tri.bounding_box();
+    for y in bb[0][0]..bb[0][1] {
+        for x in bb[1][0]..bb[1][1] {
+            let Coord([w0, w1, w2]) = projected_tri.barycentric(Coord([x, y]));
+            if w0 < 0 || w1 < 0 || w2 < 0 {
+                continue
+            }
+            fb[y as usize * fb_width + x as usize] = 0xffffffff;
+        }
     }
 }

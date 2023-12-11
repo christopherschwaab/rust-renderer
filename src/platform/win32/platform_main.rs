@@ -5,6 +5,7 @@ use std::{
     hint::black_box,
     time::SystemTime,
 };
+use jordan_tinyrenderer::Coord;
 use windows::{
     core::{self, PCWSTR},
     Win32::{
@@ -82,7 +83,7 @@ extern "system" fn window_proc(
                 StretchDIBits(
                     hdc,
                     0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
-                    0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
+                    0, 0, ctx.width, ctx.height,
                     ctx.pixels.as_ptr() as *const ffi::c_void,
                     &ctx.bitmap_info,
                     Gdi::DIB_RGB_COLORS,
@@ -180,24 +181,31 @@ pub fn platform_main() -> PlatformResult {
     if !unsafe { WindowsAndMessaging::ShowWindow(main_window, SW_SHOW) }.as_bool() {
         return Err(core::Error::from_win32());
     }
+
+    const FOCAL_LENGTH: f32 = -1.0;
+    let observer_position: Coord<f32, 3> = Coord([0.0, 0.0, 2.0]);
+
     unsafe {
         let mut x0 = 0;
         let mut last_update = SystemTime::UNIX_EPOCH;
 
         while app_window_ctx.running {
-            let now = SystemTime::now();
-            if match now.duration_since(last_update) {
-                Ok(d) => d.as_millis() > 16,
-                Err(_) => false,
-            } {
-                for y in 10..100 {
-                    for x in x0+10..x0+100 {
-                        app_window_ctx.pixels[y * INITIAL_WIDTH as usize + x] = 0xff0000ff;
-                    }
-                }
-                last_update = now;
-                x0 = (x0 + 1) % INITIAL_WIDTH as usize;
-            }
+            // let now = SystemTime::now();
+            // if match now.duration_since(last_update) {
+            //     Ok(d) => d.as_millis() > 16,
+            //     Err(_) => false,
+            // } {
+            //     for y in 10..100 {
+            //         for x in x0..x0+10 {
+            //             app_window_ctx.pixels[y * INITIAL_WIDTH as usize + x] = 0xff000000;
+            //         }
+            //         for x in x0+10..x0+100 {
+            //             app_window_ctx.pixels[y * INITIAL_WIDTH as usize + x] = 0xff0000ff;
+            //         }
+            //     }
+            //     last_update = now;
+            //     x0 = (x0 + 1) % (INITIAL_WIDTH - 100) as usize;
+            // }
 
             while PeekMessageW(&mut msg, HWND(0), 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
@@ -211,6 +219,7 @@ pub fn platform_main() -> PlatformResult {
                 // dispatchmessage.
                 black_box(&mut app_window_ctx);
             }
+            jordan_tinyrenderer::update_fb(&mut app_window_ctx.pixels, INITIAL_WIDTH as usize, &observer_position, FOCAL_LENGTH);
             StretchDIBits(
                 hdc,
                 0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,

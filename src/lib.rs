@@ -87,13 +87,49 @@ impl<T> Triangle<T, 2> where T: Ord + Copy {
     }
 }
 
-fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f32) -> Coord<i32, 2> {
-    // Eye at p looking at v: t*p + (1 - t)*v
+fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f32) -> Coord<f32, 2> {
+    // Eye at p looking at v: t*v + (1 - t)*p
     // TODO(chris): rotation
     let t = focal_length / (p.z() - v.z());
     Coord([
-        (t * v.x() + (1.0 - t) * p.x()).round() as i32,
-        (t * v.y() + (1.0 - t) * p.y()).round() as i32,
+        t * v.x(),
+        t * v.y(),
+    ])
+}
+
+pub fn update_fb(fb: &mut Vec<u32>, fb_width: usize, fb_height: usize, observer_position: &Coord<f32, 3>, focal_length: f32) {
+    let t0: Triangle<f32, 3> = [[10.0, 10.0, 0.0], [10.0, 100.0, 0.0], [100.0, 10.0, 0.0]].into();
+    //let projected_tri: Triangle<f32, 2> = Triangle([
+    //    world2screen(project_perspective(&t0.0[0], observer_position, focal_length)),
+    //    world2screen(project_perspective(&t0.0[1], observer_position, focal_length)),
+    //    world2screen(project_perspective(&t0.0[2], observer_position, focal_length)),
+    //]);
+    //let screen_space = Coord([
+    //]);
+    //let bb = screen_space.bounding_box();
+
+    //for y in bb[0][0]..bb[0][1] {
+    //    for x in bb[1][0]..bb[1][1] {
+    //        let Coord([w0, w1, w2]) = projected_tri.barycentric(Coord([x, y]));
+    //        if w0 < 0 || w1 < 0 || w2 < 0 {
+    //            continue
+    //        }
+
+    //        let width_renorm: f32 = WIDTH as f32 / (zoom * 32f32);
+    //        let height_renorm: f32 = HEIGHT as f32 / (zoom * 18f32);
+    //        let coords = Coord([
+    //             (SCREEN_WIDTH / * (x + VIEWSCREEN_WIDTH)).round(),
+    //             (SCREEN_HEIGHT / * (y + VIEWSCREEN_HEIGHT)).round()
+    //        ]);
+    //        fb[y as usize * fb_width + x as usize] = 0xffffffff;
+    //    }
+    //}
+}
+
+fn world2screen(p: Coord<f32, 2>, viewscreen_width: f32, viewscreen_height: f32, fb_width: u32, fb_height: u32) -> Coord<f32, 2> {
+    Coord([
+        (fb_width as f32 / viewscreen_width) * (p.x() - fb_width as f32 / 2.0),
+        (fb_height as f32 / viewscreen_height) * (p.y() - fb_height as f32 / 2.0),
     ])
 }
 
@@ -117,24 +153,5 @@ mod test {
 
         let t1: Triangle<u32, 2> = [[8, 4], [6, 12], [10, 5]].into();
         assert_eq!([Coord([6, 4]), Coord([10, 12])], t1.bounding_box());
-    }
-}
-
-pub fn update_fb(fb: &mut Vec<u32>, fb_width: usize, observer_position: &Coord<f32, 3>, focal_length: f32) {
-    let t0: Triangle<f32, 3> = [[10.0, 10.0, 0.0], [10.0, 100.0, 0.0], [100.0, 10.0, 0.0]].into();
-    let projected_tri: Triangle<i32, 2> = Triangle([
-        project_perspective(&t0.0[0], observer_position, focal_length),
-        project_perspective(&t0.0[1], observer_position, focal_length),
-        project_perspective(&t0.0[2], observer_position, focal_length),
-    ]);
-    let bb = projected_tri.bounding_box();
-    for y in bb[0][0]..bb[0][1] {
-        for x in bb[1][0]..bb[1][1] {
-            let Coord([w0, w1, w2]) = projected_tri.barycentric(Coord([x, y]));
-            if w0 < 0 || w1 < 0 || w2 < 0 {
-                continue
-            }
-            fb[y as usize * fb_width + x as usize] = 0xffffffff;
-        }
     }
 }

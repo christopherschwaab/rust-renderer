@@ -219,6 +219,7 @@ pub fn platform_main() -> PlatformResult {
                 // dispatchmessage.
                 black_box(&mut app_window_ctx);
             }
+
             jordan_tinyrenderer::update_fb(&mut app_window_ctx.pixels, INITIAL_WIDTH as usize, &observer_position, FOCAL_LENGTH);
             StretchDIBits(
                 hdc,

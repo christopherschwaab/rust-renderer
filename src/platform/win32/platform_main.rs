@@ -164,7 +164,7 @@ pub fn platform_main() -> PlatformResult {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
                 biWidth: INITIAL_WIDTH,
-                biHeight: -INITIAL_WIDTH,
+                biHeight: -INITIAL_HEIGHT,
                 biPlanes: 1,
                 biBitCount: 32,
                 biCompression: BI_RGB as u32,
@@ -182,9 +182,10 @@ pub fn platform_main() -> PlatformResult {
         return Err(core::Error::from_win32());
     }
 
-    const FOCAL_LENGTH: f32 = -1.0;
-    let observer_position: Coord<f32, 3> = Coord([0.0, 0.0, 2.0]);
+    const FOCAL_LENGTH: f32 = 5.0;
+    let observer_position: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
 
+    let mut wrote_to_fb = false;
     unsafe {
         let mut x0 = 0;
         let mut last_update = SystemTime::UNIX_EPOCH;
@@ -220,7 +221,21 @@ pub fn platform_main() -> PlatformResult {
                 black_box(&mut app_window_ctx);
             }
 
-            jordan_tinyrenderer::update_fb(&mut app_window_ctx.pixels, INITIAL_WIDTH as usize, &observer_position, FOCAL_LENGTH);
+            if !wrote_to_fb {
+                const VIEWSCREEN_WIDTH: f32 = 16.0;
+                const VIEWSCREEN_HEIGHT: f32 = 9.0;
+
+                println!("drawing to fb");
+                jordan_tinyrenderer::update_fb(
+                    &mut app_window_ctx.pixels,
+                    INITIAL_WIDTH as u32,
+                    INITIAL_HEIGHT as u32,
+                    VIEWSCREEN_WIDTH as f32,
+                    VIEWSCREEN_HEIGHT as f32,
+                    &observer_position,
+                    FOCAL_LENGTH);
+                wrote_to_fb = true;
+            }
             StretchDIBits(
                 hdc,
                 0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,

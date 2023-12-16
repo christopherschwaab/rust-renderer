@@ -16,18 +16,31 @@ use nom::{
     multi::{self, many0}, Compare, branch::alt
 };
 
+use crate::Coord;
+
 #[derive(Debug, PartialEq)]
-pub struct Mesh<Ix> {
+struct ObjVertex<Ix> {
+    vertex: Ix,
+    normal: Ix,
+    texture_coord: Ix,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TriangleMesh<Ix> {
     pub xs: Vec<f32>,
     pub ys: Vec<f32>,
     pub zs: Vec<f32>,
-    pub faces: Vec<[Ix; 3]>,
+    pub faces: Vec<[ObjVertex<Ix>; 3]>,
+    pub normals: Vec<Coord<f32, 3>>,
+    pub texture_coords: Vec<Coord<f32, 2>>,
 }
-pub type ObjMesh = Mesh<u32>;
+pub type ObjTriangleMesh = TriangleMesh<u32>;
 
 #[derive(Debug, PartialEq)]
 enum ObjElement {
     Vertex(f32, f32, f32, f32),
+    VertexTexture(f32, f32, f32, f32),
+    VertexNormal(f32, f32, f32, f32),
     Face(Vec<(u32, Option<u32>, Option<u32>)>),
 }
 
@@ -106,7 +119,7 @@ fn face_decl_triple<I, E>(i: I) -> IResult<I, (u32, Option<u32>, Option<u32>), E
 }
 
 fn parse_obj_line<'a, E>(i: &'a str) -> IResult<&'a str, ObjElement, E> where E: ParseError<&'a str> {
-    let (i, c) = character::complete::one_of("vlf")(i)?;
+    let (i, c) = character::complete::one_of("vlfgs")(i)?;
     match c {
         // v x y z [w]
         'v' => {
@@ -117,6 +130,8 @@ fn parse_obj_line<'a, E>(i: &'a str) -> IResult<&'a str, ObjElement, E> where E:
         // f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 ...
         'f' => combinator::map(multi::many1(line_lex(face_decl_triple)), |es| ObjElement::Face(es))(i),
         'l' => unimplemented!(),
+        'g' => unimplemented!(),
+        's' => unimplemented!(),
         _ => unreachable!(),
     }
 }
@@ -233,5 +248,9 @@ f 1 2 3
 f 3 2 1
 "#;
         assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjMesh{ xs: vec![1.0, 1.0, 1.0], ys: vec![2.0, 2.0, 2.0], zs: vec![3.0, 3.0, 3.0], faces: vec![[1, 2, 3], [3, 2, 1]] })));
+    }
+
+    #[test]
+    pub fn test_parse_obj() {
     }
 }

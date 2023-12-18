@@ -1,4 +1,4 @@
-use std::{ops::{RangeFrom, RangeTo, Range}, mem};
+use std::ops::{RangeFrom, RangeTo, Range};
 use log::trace;
 use nom::{
     character::{self, complete::{line_ending, not_line_ending, space0, multispace0}},
@@ -142,13 +142,30 @@ fn parse_obj_line<'a, E>(i: &'a str) -> IResult<&'a str, ObjElement, E> where E:
     let (i, c) = character::complete::one_of("vlfgs")(i)?;
     match c {
         // v x y z [w]
+        // vt x y z [w]
+        // vn x y z [w]
         'v' => {
-            let (i, (x, y, z)) = tuple::<_, _, E, _>((line_lex(float), line_lex(float), line_lex(float)))(i)?;
-            let (i, w) = line_lex(opt::<_, _, E, _>(float))(i)?;
-            Ok((i, ObjElement::Vertex(x, y, z, w.unwrap_or(1f32))))
+            match opt(character::complete::one_of("tn")).parse(i)? {
+                (i, Some('t')) => {
+                    let (i, (x, y, z)) = tuple::<_, _, E, _>((line_lex(float), line_lex(float), line_lex(float)))(i)?;
+                    let (i, w) = line_lex(opt::<_, _, E, _>(float))(i)?;
+                    Ok((i, ObjElement::VertexTexture(x, y, z, w.unwrap_or(1f32))))
+                },
+                (i, Some('n')) => {
+                    let (i, (x, y, z)) = tuple::<_, _, E, _>((line_lex(float), line_lex(float), line_lex(float)))(i)?;
+                    let (i, w) = line_lex(opt::<_, _, E, _>(float))(i)?;
+                    Ok((i, ObjElement::VertexNormal(x, y, z, w.unwrap_or(1f32))))
+                },
+                (i, None) => {
+                    let (i, (x, y, z)) = tuple::<_, _, E, _>((line_lex(float), line_lex(float), line_lex(float)))(i)?;
+                    let (i, w) = line_lex(opt::<_, _, E, _>(float))(i)?;
+                    Ok((i, ObjElement::Vertex(x, y, z, w.unwrap_or(1f32))))
+                },
+                (_, Some(_)) => unreachable!(),
+            }
         },
         // f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 ...
-        'f' => combinator::map(multi::many1(line_lex(face_decl_triple)), |es| ObjElement::Face(es))(i),
+        'f' => combinator::map(multi::many1(line_lex(face_decl_triple)), ObjElement::Face)(i),
         'l' => {
             trace!("STUB: ignoring obj line element");
             Ok((i, ObjElement::Line()))
@@ -284,13 +301,12 @@ f 3 2 1
 "#;
         assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); //, faces: vec![[1, 2, 3], [3, 2, 1]] })));
 
-        assert!(false, "need to fixup face stuff");
+        todo!("need to fixup face stuff");
     }
 
     #[test]
     pub fn test_parse_african_head_obj() {
-        const AFRICAN_HEAD_OBJ: &'static str = include_str!("../obj/african_head.obj");
-
-
+        const _AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
+        todo!()
     }
 }

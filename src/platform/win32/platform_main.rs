@@ -3,7 +3,6 @@ use std::{
     mem::{self, MaybeUninit},
     ffi,
     hint::black_box,
-    time::SystemTime,
 };
 use jordan_tinyrenderer::Coord;
 use windows::{
@@ -28,7 +27,6 @@ use windows::{
                 PeekMessageW,
                 TranslateMessage,
                 DispatchMessageW,
-                WM_KEYUP,
                 WM_KEYDOWN,
                 DefWindowProcW,
                 SW_SHOW,
@@ -39,7 +37,6 @@ use windows::{
                 WM_PAINT,
                 WM_ACTIVATEAPP, DestroyWindow, PostQuitMessage,
             },
-            Input::KeyboardAndMouse,
         },
         Foundation::{HWND, LRESULT, WPARAM, LPARAM}
     },
@@ -58,7 +55,7 @@ extern "system" fn window_proc(
     lparam: LPARAM
 ) -> LRESULT {
     let ctx: Option<&mut AppWindowContext> = unsafe {
-        let ctx = mem::transmute::<isize, *mut AppWindowContext>(WindowsAndMessaging::GetWindowLongPtrW(hwnd, WindowsAndMessaging::GWLP_USERDATA));
+        let ctx = WindowsAndMessaging::GetWindowLongPtrW(hwnd, WindowsAndMessaging::GWLP_USERDATA) as *mut AppWindowContext;
         if ctx.is_null() { None } else { Some(&mut *ctx) }
     };
 
@@ -94,15 +91,15 @@ extern "system" fn window_proc(
             LRESULT(0)
         },
         WM_KEYDOWN |
-        WM_KEYUP => {
-            let vkcode = KeyboardAndMouse::VIRTUAL_KEY(wparam.0 as u16);
-            let _is_down = (lparam.0 as u32 & (1 << 31)) == 0;
-            // TODO(chris): decide on keymap and modify emu input state
-            match vkcode {
-                _ => {},
-            };
-            LRESULT(0)
-        },
+        // WM_KEYUP => {
+        //     let vkcode = KeyboardAndMouse::VIRTUAL_KEY(wparam.0 as u16);
+        //     let _is_down = (lparam.0 as u32 & (1 << 31)) == 0;
+        //     // TODO(chris): decide on keymap and modify emu input state
+        //     match vkcode {
+        //         _ => {},
+        //     };
+        //     LRESULT(0)
+        // },
         WM_ACTIVATEAPP => {
             LRESULT(0)
         }
@@ -135,7 +132,8 @@ pub fn platform_main() -> PlatformResult {
         ..Default::default()
     };
     if unsafe { RegisterClassW(&wc) } == 0 {
-        return Err(core::Error::from_win32());
+        let e = log_win32_error("couldn't create window, failed to register window class.");
+        return Err(e);
     }
 
     let main_window = unsafe {
@@ -173,7 +171,7 @@ pub fn platform_main() -> PlatformResult {
             ..Default::default()
         }
     };
-    unsafe { WindowsAndMessaging::SetWindowLongPtrW(main_window, WindowsAndMessaging::GWLP_USERDATA, mem::transmute::<*mut AppWindowContext, isize>(&mut app_window_ctx as *mut AppWindowContext)) };
+    unsafe { WindowsAndMessaging::SetWindowLongPtrW(main_window, WindowsAndMessaging::GWLP_USERDATA, (&mut app_window_ctx as *mut AppWindowContext) as isize)};
 
     let hdc = unsafe { GetDC(main_window) };
     let mut msg = Default::default();
@@ -187,8 +185,8 @@ pub fn platform_main() -> PlatformResult {
 
     let mut wrote_to_fb = false;
     unsafe {
-        let mut x0 = 0;
-        let mut last_update = SystemTime::UNIX_EPOCH;
+        // let mut x0 = 0;
+        // let mut last_update = SystemTime::UNIX_EPOCH;
 
         while app_window_ctx.running {
             // let now = SystemTime::now();
@@ -230,8 +228,8 @@ pub fn platform_main() -> PlatformResult {
                     &mut app_window_ctx.pixels,
                     INITIAL_WIDTH as u32,
                     INITIAL_HEIGHT as u32,
-                    VIEWSCREEN_WIDTH as f32,
-                    VIEWSCREEN_HEIGHT as f32,
+                    VIEWSCREEN_WIDTH,
+                    VIEWSCREEN_HEIGHT,
                     &observer_position,
                     FOCAL_LENGTH);
                 wrote_to_fb = true;

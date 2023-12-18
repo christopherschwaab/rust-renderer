@@ -1,5 +1,5 @@
 // NOTE(chris): this currently assumes the viewer is along the z axis.
-use std::ops::{Index, Add, Mul, Sub, Div};
+use std::ops::{Index, Sub};
 
 pub mod obj;
 
@@ -103,11 +103,11 @@ fn reduce_dimension<T, const M: usize, const N: usize>(t: &Triangle<T, M>) -> Tr
     ])
 }
 
-fn project_orthographic(v: &Coord<f32, 3>) -> Coord<f32, 2> {
+pub fn project_orthographic(v: &Coord<f32, 3>) -> Coord<f32, 2> {
     Coord([v.x(), v.y()])
 }
 
-fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f32) -> Coord<f32, 2> {
+pub fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f32) -> Coord<f32, 2> {
     // Eye at p looking at v: t*v + (1 - t)*p
     // TODO(chris): rotation
     let t = focal_length / (p.z() - v.z());
@@ -132,16 +132,14 @@ fn square(coords: &[Coord<f32, 3>; 4]) -> (Triangle<f32, 3>, Triangle<f32, 3>) {
     )
 }
 
-pub fn update_fb(fb: &mut Vec<u32>, fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, observer_position: &Coord<f32, 3>, focal_length: f32) {
-
-
+pub fn update_fb(fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, observer_position: &Coord<f32, 3>, focal_length: f32) {
     // let t0: Triangle<f32, 3> = [[10.0, 10.0, 0.0], [10.0, 100.0, 0.0], [100.0, 10.0, 0.0]].into();
     // draw_triangle(&t0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length);
 
     //let t1: Triangle<f32, 3> = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 100.0, 0.0]].into();
     //draw_triangle(&t1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
 
-    let back = square(&[
+    let _back = square(&[
         Coord([0.0, 0.0, 0.0]),
         Coord([0.0, 0.5, 0.0]),
         Coord([0.5, 0.5, 0.0]),
@@ -161,7 +159,8 @@ pub fn update_fb(fb: &mut Vec<u32>, fb_width: u32, fb_height: u32, viewscreen_wi
     draw_triangle(&bottom.1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
 }
 
-pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut Vec<u32>, fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, observer_position: &Coord<f32, 3>, focal_length: f32, color: u32) {
+#[allow(clippy::too_many_arguments)]
+pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut [u32], fb_width: u32, fb_height: u32, _viewscreen_width: f32, _viewscreen_height: f32, _observer_position: &Coord<f32, 3>, _focal_length: f32, color: u32) {
     // let projected_tri: Triangle<f32, 2> = Triangle([
     //     world2ndc(&project_perspective(&t.0[0], observer_position, focal_length), viewscreen_width, viewscreen_height),
     //     world2ndc(&project_perspective(&t.0[1], observer_position, focal_length), viewscreen_width, viewscreen_height),

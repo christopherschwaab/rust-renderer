@@ -48,7 +48,12 @@ enum ObjElement {
     Group(),
 }
 
-impl<Ix> TriangleMesh<Ix> {
+pub trait AsUsize {
+    fn as_usize(self) -> usize;
+}
+impl AsUsize for u32 { fn as_usize(self) -> usize { self as usize }}
+
+impl<Ix> TriangleMesh<Ix> where Ix: AsUsize + Copy {
     // TODO(chris): decide on layout and such
     pub fn new(xs: Vec<f32>, ys: Vec<f32>, zs: Vec<f32>) -> Self {
         Self {
@@ -61,6 +66,10 @@ impl<Ix> TriangleMesh<Ix> {
             face_normals: vec![],
             face_texture_coords: vec![],
         }
+    }
+
+    pub fn vertex(&self, ix: Ix) -> Coord<f32, 3> {
+        Coord([self.xs[ix.as_usize()], self.ys[ix.as_usize()], self.zs[ix.as_usize()]])
     }
 }
 
@@ -306,7 +315,12 @@ f 3 2 1
 
     #[test]
     pub fn test_parse_african_head_obj() {
-        const _AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
+        const AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
+
+        let (i, obj) = parse_obj::<(_, ErrorKind)>(AFRICAN_HEAD_OBJ).unwrap();
+        assert_eq!("", i);
+
+        let _v0 = obj.vertex(0);
         todo!()
     }
 }

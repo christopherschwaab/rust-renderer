@@ -10,16 +10,13 @@ jobs:
             build: [windows-msvc, linux-gnu]
             include:
               - build: windows-msvc
-                target: x86_64-pc-windows-msvc
                 runner: windows-latest
               - build: linux-gnu
-                target: x86_64-unknown-linux-gnu
                 runner: ubuntu-latest
         steps:
           - uses: actions-rust-lang/setup-rust-toolchain@v1
             with:
               toolchain: stable
-              target: ${{ matrix.target }}
           - uses: actions/checkout@v4
           - run: cargo test --all-features
 

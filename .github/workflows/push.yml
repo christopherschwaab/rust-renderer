@@ -4,8 +4,8 @@ jobs:
     clippy_check:
         runs-on: ubuntu-latest
         steps:
-            - uses: actions/checkout@v3
+            - uses: actions/checkout@v4
             - run: rustup component add clippy
-            - uses: actions-rs-plus/clippy-check@v1
+            - uses: actions-rs-plus/clippy-check@v2
               with:
-                  args: --all-features
+                  args: --all-features --all-targets

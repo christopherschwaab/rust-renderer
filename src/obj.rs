@@ -1,4 +1,5 @@
-use std::ops::{RangeFrom, RangeTo, Range};
+use std::{ops::{RangeFrom, RangeTo, Range}, mem};
+use log::trace;
 use nom::{
     character::{self, complete::{line_ending, not_line_ending, space0, multispace0}},
     error::ParseError,
@@ -18,21 +19,21 @@ use nom::{
 
 use crate::Coord;
 
-#[derive(Debug, PartialEq)]
-struct ObjVertex<Ix> {
-    vertex: Ix,
-    normal: Ix,
-    texture_coord: Ix,
-}
+//const OPTION_F32_IS_F32_SIZED: () = {
+//    const _: [(); 0 - !{ const ASSERT: bool = mem::size_of::<Option<f32>>() == mem::size_of::<f32>(); ASSERT as usize }] = [];
+//    ()
+//};
 
 #[derive(Debug, PartialEq)]
 pub struct TriangleMesh<Ix> {
     pub xs: Vec<f32>,
     pub ys: Vec<f32>,
     pub zs: Vec<f32>,
-    pub faces: Vec<[ObjVertex<Ix>; 3]>,
     pub normals: Vec<Coord<f32, 3>>,
     pub texture_coords: Vec<Coord<f32, 2>>,
+    pub face_vertices: Vec<Ix>,
+    pub face_normals: Vec<Ix>,
+    pub face_texture_coords: Vec<Ix>,
 }
 pub type ObjTriangleMesh = TriangleMesh<u32>;
 
@@ -42,6 +43,25 @@ enum ObjElement {
     VertexTexture(f32, f32, f32, f32),
     VertexNormal(f32, f32, f32, f32),
     Face(Vec<(u32, Option<u32>, Option<u32>)>),
+    Line(),
+    Smoothing(),
+    Group(),
+}
+
+impl<Ix> TriangleMesh<Ix> {
+    // TODO(chris): decide on layout and such
+    pub fn new(xs: Vec<f32>, ys: Vec<f32>, zs: Vec<f32>) -> Self {
+        Self {
+            xs,
+            ys,
+            zs,
+            normals: vec![],
+            texture_coords: vec![],
+            face_vertices: vec![],
+            face_normals: vec![],
+            face_texture_coords: vec![],
+        }
+    }
 }
 
 fn rest_of_line<I, E>(i: I) -> IResult<I, (), E>
@@ -129,14 +149,23 @@ fn parse_obj_line<'a, E>(i: &'a str) -> IResult<&'a str, ObjElement, E> where E:
         },
         // f v1/vt1/vn1 v2/vt2/vn2 v3/vt3/vn3 ...
         'f' => combinator::map(multi::many1(line_lex(face_decl_triple)), |es| ObjElement::Face(es))(i),
-        'l' => unimplemented!(),
-        'g' => unimplemented!(),
-        's' => unimplemented!(),
-        _ => unreachable!(),
+        'l' => {
+            trace!("STUB: ignoring obj line element");
+            Ok((i, ObjElement::Line()))
+        },
+        'g' => {
+            trace!("STUB: ignoring obj group element");
+            Ok((i, ObjElement::Group()))
+        },
+        's' => {
+            trace!("STUB: ignoring obj smoothing element");
+            Ok((i, ObjElement::Smoothing()))
+        },
+        c => unimplemented!("obj element type {}", c),
     }
 }
 
-pub fn parse_obj<'a, E>(i: &'a str) -> IResult<&'a str, ObjMesh, E> where E: ParseError<&'a str> {
+pub fn parse_obj<'a, E>(i: &'a str) -> IResult<&'a str, ObjTriangleMesh, E> where E: ParseError<&'a str> {
     let (i, elts) = terminated(many0(lex(parse_obj_line)), preceded(multispace0, eof))(i)?;
     let mut xs = vec![];
     let mut ys = vec![];
@@ -149,12 +178,18 @@ pub fn parse_obj<'a, E>(i: &'a str) -> IResult<&'a str, ObjMesh, E> where E: Par
             zs.push(z);
         },
         ObjElement::Face(vs) => {
-            // TODO(chris): normals and textures
+            // TODO(chris): faces
             let [ix, iy, iz] = vs[..] else { todo!() };
             faces.push([ix.0, iy.0, iz.0]);
-        }
+        },
+        &ObjElement::VertexTexture(_, _, _, _) => todo!(),
+        &ObjElement::VertexNormal(_, _, _, _) => todo!(),
+        &ObjElement::Line() => todo!(),
+        &ObjElement::Smoothing() => todo!(),
+        &ObjElement::Group() => todo!(),
+
     });
-    Ok((i, ObjMesh { xs, ys, zs, faces }))
+    Ok((i, ObjTriangleMesh::new(xs, ys, zs)))
 }
 
 #[cfg(test)]
@@ -220,7 +255,7 @@ v 1 2 3
 v 1 2 3
 f 1 2 3
 "#;
-        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjMesh{ xs: vec![1.0, 1.0, 1.0], ys: vec![2.0, 2.0, 2.0], zs: vec![3.0, 3.0, 3.0], faces: vec![[1, 2, 3]] })));
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); // faces: vec![[1, 2, 3]] })));
 
         let input = r#"
 
@@ -232,7 +267,7 @@ v 1 2 3
 f 1 2 3
 
 "#;
-        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjMesh{ xs: vec![1.0, 1.0, 1.0], ys: vec![2.0, 2.0, 2.0], zs: vec![3.0, 3.0, 3.0], faces: vec![[1, 2, 3]] })));
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); //, faces: vec![[1, 2, 3]] })));
 
         let input = r#"
   # lskljsdf lskjdflk lkjslakfjd %"^$£"
@@ -247,10 +282,15 @@ f 1 2 3
   # internet lksjdflkjl
 f 3 2 1
 "#;
-        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjMesh{ xs: vec![1.0, 1.0, 1.0], ys: vec![2.0, 2.0, 2.0], zs: vec![3.0, 3.0, 3.0], faces: vec![[1, 2, 3], [3, 2, 1]] })));
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); //, faces: vec![[1, 2, 3], [3, 2, 1]] })));
+
+        assert!(false, "need to fixup face stuff");
     }
 
     #[test]
-    pub fn test_parse_obj() {
+    pub fn test_parse_african_head_obj() {
+        const AFRICAN_HEAD_OBJ: &'static str = include_str!("../obj/african_head.obj");
+
+
     }
 }

@@ -31,7 +31,7 @@ pub struct TriangleMesh<Ix> {
     pub zs: Vec<f32>,
     pub normals: Vec<Coord<f32, 3>>,
     pub texture_coords: Vec<Coord<f32, 2>>,
-    pub face_vertices: Vec<Ix>,
+    pub face_vertices: Vec<[Ix; 3]>,
     pub face_normals: Vec<Ix>,
     pub face_texture_coords: Vec<Ix>,
 }
@@ -44,7 +44,7 @@ enum ObjElement {
     VertexNormal(f32, f32, f32, f32),
     Face(Vec<(u32, Option<u32>, Option<u32>)>),
     Line(),
-    Smoothing(),
+    Smoothing(bool),
     Group(),
 }
 
@@ -55,21 +55,21 @@ impl AsUsize for u32 { fn as_usize(self) -> usize { self as usize }}
 
 impl<Ix> TriangleMesh<Ix> where Ix: AsUsize + Copy {
     // TODO(chris): decide on layout and such
-    pub fn new(xs: Vec<f32>, ys: Vec<f32>, zs: Vec<f32>) -> Self {
+    pub fn new(xs: Vec<f32>, ys: Vec<f32>, zs: Vec<f32>, face_vertices: Vec<[Ix; 3]>) -> Self {
         Self {
             xs,
             ys,
             zs,
             normals: vec![],
             texture_coords: vec![],
-            face_vertices: vec![],
+            face_vertices: face_vertices,
             face_normals: vec![],
             face_texture_coords: vec![],
         }
     }
 
     pub fn vertex(&self, ix: Ix) -> Coord<f32, 3> {
-        Coord([self.xs[ix.as_usize()], self.ys[ix.as_usize()], self.zs[ix.as_usize()]])
+        Coord([self.xs[ix.as_usize() - 1], self.ys[ix.as_usize() - 1], self.zs[ix.as_usize() - 1]])
     }
 }
 
@@ -181,22 +181,23 @@ fn parse_obj_line<'a, E>(i: &'a str) -> IResult<&'a str, ObjElement, E> where E:
         },
         'g' => {
             trace!("STUB: ignoring obj group element");
+            let (i, _) = rest_of_line(i)?;
             Ok((i, ObjElement::Group()))
         },
         's' => {
-            trace!("STUB: ignoring obj smoothing element");
-            Ok((i, ObjElement::Smoothing()))
+            let (i, c) = line_lex(character::complete::one_of("01"))(i)?;
+            Ok((i, ObjElement::Smoothing((c as u8 - '0' as u8) != 0)))
         },
         c => unimplemented!("obj element type {}", c),
     }
 }
 
 pub fn parse_obj<'a, E>(i: &'a str) -> IResult<&'a str, ObjTriangleMesh, E> where E: ParseError<&'a str> {
-    let (i, elts) = terminated(many0(lex(parse_obj_line)), preceded(multispace0, eof))(i)?;
+    let (i, elts) = terminated(many0(lex(parse_obj_line)), lex(eof))(i)?;
     let mut xs = vec![];
     let mut ys = vec![];
     let mut zs = vec![];
-    let mut faces = vec![];
+    let mut faces: Vec<[u32; 3]> = vec![];
     elts.iter().for_each(|e| match e {
         &ObjElement::Vertex(x, y, z, _) => {
             xs.push(x);
@@ -204,23 +205,35 @@ pub fn parse_obj<'a, E>(i: &'a str) -> IResult<&'a str, ObjTriangleMesh, E> wher
             zs.push(z);
         },
         ObjElement::Face(vs) => {
-            // TODO(chris): faces
-            let [ix, iy, iz] = vs[..] else { todo!() };
-            faces.push([ix.0, iy.0, iz.0]);
+            if vs.len() != 3 {
+                // TODO(chris): fail gracefully with a recoverable error of some sort
+                panic!("invalid triangel mesh, faces must consist of 3 vertices");
+            }
+            // TODO(chris): normals and texture
+            faces.push([vs[0].0, vs[1].0, vs[2].0]);
         },
-        &ObjElement::VertexTexture(_, _, _, _) => todo!(),
-        &ObjElement::VertexNormal(_, _, _, _) => todo!(),
+        &ObjElement::VertexTexture(_, _, _, _) => {
+            trace!("STUB: ignoring vertex texture element in mesh construction");
+        },
+        &ObjElement::VertexNormal(_, _, _, _) => {
+            trace!("STUB: ignoring vertex normal element in mesh construction");
+        },
         &ObjElement::Line() => todo!(),
-        &ObjElement::Smoothing() => todo!(),
-        &ObjElement::Group() => todo!(),
-
+        &ObjElement::Smoothing(_) => {
+            trace!("STUB: ignoring smoothing toogle in mesh construction");
+        },
+        &ObjElement::Group() => {
+            trace!("STUB: ignoring groups specifier in mesh construction");
+        },
     });
-    Ok((i, ObjTriangleMesh::new(xs, ys, zs)))
+    Ok((i, ObjTriangleMesh::new(xs, ys, zs, faces)))
 }
 
 #[cfg(test)]
 mod test {
     use nom::error::ErrorKind;
+
+    use crate::test::assert_close;
 
     use super::*;
 
@@ -281,7 +294,7 @@ v 1 2 3
 v 1 2 3
 f 1 2 3
 "#;
-        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); // faces: vec![[1, 2, 3]] })));
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0], vec![[1, 2, 3]]))));
 
         let input = r#"
 
@@ -293,7 +306,7 @@ v 1 2 3
 f 1 2 3
 
 "#;
-        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); //, faces: vec![[1, 2, 3]] })));
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0], vec![[1, 2, 3]]))));
 
         let input = r#"
   # lskljsdf lskjdflk lkjslakfjd %"^$£"
@@ -308,19 +321,70 @@ f 1 2 3
   # internet lksjdflkjl
 f 3 2 1
 "#;
-        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0])))); //, faces: vec![[1, 2, 3], [3, 2, 1]] })));
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![1.0, 1.0, 1.0], vec![2.0, 2.0, 2.0], vec![3.0, 3.0, 3.0], vec![[1, 2, 3], [3, 2, 1]]))));
 
-        todo!("need to fixup face stuff");
+        let input = r#"
+# 1258 vertex normals
+
+g head
+s 1
+f 24/1/24 25/2/25 26/3/26
+# 2492 faces
+"#;
+        assert_eq!(parse_obj::<(_, ErrorKind)>(input), Ok(("", ObjTriangleMesh::new(vec![], vec![], vec![], vec![[24, 25, 26]]))));
+    }
+
+    static AFRICAN_HEAD_OBJ: std::sync::OnceLock<TriangleMesh<u32>> = std::sync::OnceLock::new();
+    fn get_african_head_obj() -> &'static TriangleMesh<u32> {
+        AFRICAN_HEAD_OBJ.get_or_init(|| {
+            const AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
+
+            let (i, obj) = parse_obj::<(_, ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
+            assert_eq!("", i);
+
+            obj
+        })
     }
 
     #[test]
-    pub fn test_parse_african_head_obj() {
-        const AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
+    pub fn test_parse_african_head_obj_vertices() {
+        let obj = get_african_head_obj();
 
-        let (i, obj) = parse_obj::<(_, ErrorKind)>(AFRICAN_HEAD_OBJ).unwrap();
-        assert_eq!("", i);
+        let v0 = obj.vertex(0);
+        const V0_EXPECTED: Coord<f32, 3> = Coord([-0.000581696, -0.734665, -0.623267]);
+        assert_close!(v0.x(), V0_EXPECTED.x(), 1e-6);
+        assert_close!(v0.y(), V0_EXPECTED.y(), 1e-6);
+        assert_close!(v0.z(), V0_EXPECTED.z(), 1e-6);
 
-        let _v0 = obj.vertex(0);
-        todo!()
+        let v1023 = obj.vertex(1023);
+        const V1023: Coord<f32, 3> = Coord([-0.101867, 0.0715163, 0.586237]);
+        assert_close!(v1023.x(), V1023.x(), 1e-6);
+        assert_close!(v1023.y(), V1023.y(), 1e-6);
+        assert_close!(v1023.z(), V1023.z(), 1e-6);
+
+        const NUM_VERTICES: usize = 1258;
+        let num_vertices = obj.xs.len();
+        assert_eq!(num_vertices, NUM_VERTICES);
+
+        let v_last = obj.vertex(num_vertices as u32 - 1);
+        const V_LAST: Coord<f32, 3> = Coord([-0.171097, 0.299996, 0.415616]);
+        assert_eq!(v_last.x(), V_LAST.x());
+
+        let first_vertex = obj.vertex(1);
+        assert_close!(first_vertex.x(), -0.000581696, 1e-6);
+        assert_close!(first_vertex.y(), -0.734665, 1e-6);
+        assert_close!(first_vertex.z(), -0.623267, 1e-6);
+    }
+
+    #[test]
+    pub fn test_parse_african_head_obj_faces() {
+        let obj = get_african_head_obj();
+
+        const NUM_FACES: usize = 2492;
+        assert_eq!(obj.face_vertices.len(), NUM_FACES);
+
+        assert_eq!(obj.face_vertices[0], [24, 25, 26]);
+        assert_eq!(obj.face_vertices[1171], [630, 663, 670]);
+        assert_eq!(obj.face_vertices[NUM_FACES - 1], [1201, 1202, 1200]);
     }
 }

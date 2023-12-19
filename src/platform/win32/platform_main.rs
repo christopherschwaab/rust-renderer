@@ -46,7 +46,7 @@ mod platform_lib;
 use platform_lib::*;
 
 const INITIAL_WIDTH: i32 = 1024;
-const INITIAL_HEIGHT: i32 = 768;
+const INITIAL_HEIGHT: i32 = 800;
 
 extern "system" fn window_proc(
     hwnd: HWND,

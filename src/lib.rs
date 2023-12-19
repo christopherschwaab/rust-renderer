@@ -1,6 +1,8 @@
 // NOTE(chris): this currently assumes the viewer is along the z axis.
 use std::ops::{Index, Sub};
 
+use nom::error::ErrorKind;
+
 pub mod obj;
 
 #[repr(transparent)]
@@ -66,6 +68,32 @@ impl<'a, T, const N: usize> Sub<&'a Coord<T, N>> for &'a Coord<T, N> where T: Su
     }
 }
 
+impl<const N: usize> Coord<f32, N> {
+    fn norm(&self) -> f32 {
+        let sum_of_squares = self.0.iter().fold(0.0, |sum, x| sum + x * x);
+        sum_of_squares.sqrt()
+    }
+
+    fn normalize(&self) -> Self {
+        self.scale(1.0 / self.norm())
+    }
+
+    fn scale(&self, c: f32) -> Self {
+        Self(self.0.map(|x| c*x))
+    }
+}
+
+impl Coord<f32, 3> {
+    fn cross(&self, v: &Self) -> Self {
+        let [x, y, z] = self.0;
+        Self([y*v.z() - z*v.y(), z*v.x() - x*v.z(), x*v.y() - y*v.x()])
+    }
+
+    fn dot(&self, v: &Self) -> f32 {
+        let [x, y, z] = self.0;
+        x*v.x() + y*v.y() + z*v.z()
+    }
+}
 
 pub fn barycentric(t: &Triangle<u32, 2>, p: Coord<u32, 2>) -> Coord<f32, 3> {
     // w1*t[0] + w2*t[1] + w3*t[2] = [x y]
@@ -139,24 +167,51 @@ pub fn update_fb(fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width
     //let t1: Triangle<f32, 3> = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 100.0, 0.0]].into();
     //draw_triangle(&t1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
 
-    let _back = square(&[
-        Coord([0.0, 0.0, 0.0]),
-        Coord([0.0, 0.5, 0.0]),
-        Coord([0.5, 0.5, 0.0]),
-        Coord([0.5, 0.0, 0.0]),
-    ]);
-    let bottom = square(&[
-        Coord([0.0, 0.0, 0.0]),
-        Coord([0.5, 0.0, 0.0]),
-        Coord([0.5, 0.0, 0.5]),
-        Coord([0.0, 0.0, 0.5]),
-    ]);
+    // let _back = square(&[
+    //     Coord([0.0, 0.0, 0.0]),
+    //     Coord([0.0, 0.5, 0.0]),
+    //     Coord([0.5, 0.5, 0.0]),
+    //     Coord([0.5, 0.0, 0.0]),
+    // ]);
+    // let bottom = square(&[
+    //     Coord([0.0, 0.0, 0.0]),
+    //     Coord([0.5, 0.0, 0.0]),
+    //     Coord([0.5, 0.0, 0.5]),
+    //     Coord([0.0, 0.0, 0.5]),
+    // ]);
 
     //draw_triangle(&back.0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
     //draw_triangle(&back.1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
 
-    draw_triangle(&bottom.0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
-    draw_triangle(&bottom.1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
+    // draw_triangle(&bottom.0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
+    // draw_triangle(&bottom.1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
+
+    const AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
+    let (_, obj) = obj::parse_obj::<(_, ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
+
+    for [v_ix0, v_ix1, v_ix2] in obj.face_vertices.iter() {
+        let v0 = obj.vertex(*v_ix0);
+        let v1 = obj.vertex(*v_ix1);
+        let v2 = obj.vertex(*v_ix2);
+
+        // let color = 0xff << 24
+        //     | (rand::random::<u8>() as u32) << 16
+        //     | (rand::random::<u8>() as u32) << 8
+        //     | (rand::random::<u8>() as u32);
+        // draw_triangle(&Triangle([v0, v1, v2]), fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, color);
+
+        // TODO(chris): how to get rid of all the refs?
+        let normal = &(&v1 - &v0).cross(&(&v2 - &v0)).normalize();
+        const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, -1.0]);
+        let intensity = LIGHT_DIR.dot(normal);
+        if intensity > 0.0 {
+            let color = 0xff << 24
+                | ((intensity * 200.0) as u32) << 16
+                | ((intensity * 200.0) as u32) << 8
+                | ((intensity * 200.0) as u32);
+            draw_triangle(&Triangle([v0, v1, v2]), fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, color);
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -175,8 +230,8 @@ pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut [u32], fb_width: u32, fb_hei
     ]);
     let bb = screen_tri.bounding_box();
 
-    println!("got projected tri: {:?}", projected_tri);
-    println!("got screen tri: {:?}", screen_tri);
+    // println!("got projected tri: {:?}", projected_tri);
+    // println!("got screen tri: {:?}", screen_tri);
     for y in bb[0].y()..bb[1].y() {
         for x in bb[0].x()..bb[1].x() {
             let Coord([w0, w1, w2]) = barycentric(&screen_tri, Coord([x, y]));
@@ -201,7 +256,7 @@ pub fn ndc2screen(p: &Coord<f32, 2>, fb_width: u32, fb_height: u32) -> Coord<u32
     // TODO(chris): probably want to flip the y-axis here
     Coord([
         ((p.x() + 1.0) * (fb_width / 2) as f32).round() as u32,
-        ((p.y() + 1.0) * (fb_height / 2) as f32).round() as u32,
+        ((-p.y() + 1.0) * (fb_height / 2) as f32).round() as u32,
     ])
 }
 
@@ -230,7 +285,7 @@ mod test {
             )
         }
     }
-
+    pub(crate) use assert_close;
 
     #[test]
     fn test_barycentric() {

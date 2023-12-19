@@ -202,7 +202,7 @@ pub fn update_fb(fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width
 
         // TODO(chris): how to get rid of all the refs?
         let normal = &(&v1 - &v0).cross(&(&v2 - &v0)).normalize();
-        const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, -1.0]);
+        const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
         let intensity = LIGHT_DIR.dot(normal);
         if intensity > 0.0 {
             let color = 0xff << 24
@@ -253,7 +253,6 @@ pub fn world2ndc(p: &Coord<f32, 2>, viewscreen_width: f32, viewscreen_height: f3
 }
 
 pub fn ndc2screen(p: &Coord<f32, 2>, fb_width: u32, fb_height: u32) -> Coord<u32, 2> {
-    // TODO(chris): probably want to flip the y-axis here
     Coord([
         ((p.x() + 1.0) * (fb_width / 2) as f32).round() as u32,
         ((-p.y() + 1.0) * (fb_height / 2) as f32).round() as u32,

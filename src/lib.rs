@@ -1,5 +1,5 @@
 // NOTE(chris): this currently assumes the viewer is along the z axis.
-use std::ops::{Index, Sub};
+use std::{ops::{Index, Sub}, borrow::Borrow};
 
 use nom::error::ErrorKind;
 
@@ -84,14 +84,16 @@ impl<const N: usize> Coord<f32, N> {
 }
 
 impl Coord<f32, 3> {
-    fn cross(&self, v: &Self) -> Self {
-        let [x, y, z] = self.0;
-        Self([y*v.z() - z*v.y(), z*v.x() - x*v.z(), x*v.y() - y*v.x()])
+    fn cross(&self, v: impl Borrow<Self>) -> Self {
+        let [x1, y1, z1] = self.0;
+        let &Coord([x2, y2, z2]) = v.borrow();
+        Self([y1*z2 - z1*y2, z1*x2 - x1*z2, x1*y2 - y1*x2])
     }
 
-    fn dot(&self, v: &Self) -> f32 {
-        let [x, y, z] = self.0;
-        x*v.x() + y*v.y() + z*v.z()
+    fn dot(&self, v: impl Borrow<Self>) -> f32 {
+        let [x1, y1, z1] = self.0;
+        let &Coord([x2, y2, z2]) = v.borrow();
+        x1*x2 + y1*y2 + z1*z2
     }
 }
 
@@ -201,7 +203,7 @@ pub fn update_fb(fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width
         // draw_triangle(&Triangle([v0, v1, v2]), fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, color);
 
         // TODO(chris): how to get rid of all the refs?
-        let normal = &(&v1 - &v0).cross(&(&v2 - &v0)).normalize();
+        let normal = (&v1 - &v0).cross(&v2 - &v0).normalize();
         const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
         let intensity = LIGHT_DIR.dot(normal);
         if intensity > 0.0 {

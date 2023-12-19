@@ -49,6 +49,7 @@ enum ObjElement {
 }
 
 pub trait AsUsize {
+    #[allow(clippy::wrong_self_convention)]
     fn as_usize(self) -> usize;
 }
 impl AsUsize for u32 { fn as_usize(self) -> usize { self as usize }}
@@ -62,7 +63,7 @@ impl<Ix> TriangleMesh<Ix> where Ix: AsUsize + Copy {
             zs,
             normals: vec![],
             texture_coords: vec![],
-            face_vertices: face_vertices,
+            face_vertices,
             face_normals: vec![],
             face_texture_coords: vec![],
         }
@@ -186,7 +187,7 @@ fn parse_obj_line<'a, E>(i: &'a str) -> IResult<&'a str, ObjElement, E> where E:
         },
         's' => {
             let (i, c) = line_lex(character::complete::one_of("01"))(i)?;
-            Ok((i, ObjElement::Smoothing((c as u8 - '0' as u8) != 0)))
+            Ok((i, ObjElement::Smoothing((c as u8 - b'0') != 0)))
         },
         c => unimplemented!("obj element type {}", c),
     }

@@ -147,21 +147,6 @@ pub fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f
     ])
 }
 
-fn square(coords: &[Coord<f32, 3>; 4]) -> (Triangle<f32, 3>, Triangle<f32, 3>) {
-    (
-        Triangle([
-            coords[0].clone(),
-            coords[1].clone(),
-            coords[2].clone(),
-        ]),
-        Triangle([
-            coords[0].clone(),
-            coords[2].clone(),
-            coords[3].clone(),
-        ])
-    )
-}
-
 pub fn update_fb(fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, observer_position: &Coord<f32, 3>, focal_length: f32) {
     // let t0: Triangle<f32, 3> = [[10.0, 10.0, 0.0], [10.0, 100.0, 0.0], [100.0, 10.0, 0.0]].into();
     // draw_triangle(&t0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length);

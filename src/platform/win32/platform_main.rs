@@ -9,7 +9,7 @@ use windows::{
     core::{self, PCWSTR},
     Win32::{
         Graphics::Gdi::{self, GetDC, BITMAPINFO, BI_RGB, BITMAPINFOHEADER, StretchDIBits},
-        System::LibraryLoader::GetModuleHandleW,
+        System::{LibraryLoader::GetModuleHandleW, Performance::{QueryPerformanceCounter, QueryPerformanceFrequency}, Threading::Sleep},
         UI::{
             WindowsAndMessaging::{
                 self,
@@ -134,6 +134,21 @@ struct AppWindowContext {
     running: bool,
 }
 
+fn query_performance_counter() -> i64 {
+    let mut counter = 0i64;
+    // NOTE(chris): this can never fail on windows xp or later
+    let _ = unsafe { QueryPerformanceCounter(&mut counter) };
+    counter
+}
+
+fn query_performance_frequency() -> i64 {
+    let mut perf_count_frequency = 0i64;
+    // NOTE(chris): this can never fail on windows xp or later
+    // counts/second
+    let _ = unsafe { QueryPerformanceFrequency(&mut perf_count_frequency) };
+    perf_count_frequency
+}
+
 pub fn platform_main() -> PlatformResult {
     let title = to_pcwstr("tinyrenderer-window");
     let wc_name = to_pcwstr("tinyrenderer-window-class");
@@ -202,12 +217,14 @@ pub fn platform_main() -> PlatformResult {
     const AFRICAN_HEAD_OBJ: &str = include_str!("../../../obj/african_head.obj");
     let (_, african_head_mesh) = obj::parse_obj::<(_, nom::error::ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
 
-    // const MS_PER_SECOND: u32 = 1000;
-    // let target_fps = 30;
-    // let frame_time = MS_PER_SECOND / target_fps;
-    // let mut last_frame_tick = 0;
+    let perf_count_frequency = query_performance_frequency();
+
+    const MS_PER_SECOND: u32 = 1000;
+    let target_fps = 30;
+    let target_seconds_per_frame = 1.0 / target_fps as f32;
 
     unsafe {
+        let mut last_counter = query_performance_counter();
         while app_window_ctx.running {
             while PeekMessageW(&mut msg, HWND(0), 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
@@ -234,6 +251,14 @@ pub fn platform_main() -> PlatformResult {
                 VIEWSCREEN_HEIGHT,
                 &observer_position,
                 FOCAL_LENGTH);
+
+            let elapsed_seconds = (query_performance_counter() - last_counter) as f32 / perf_count_frequency as f32;
+            if elapsed_seconds < target_seconds_per_frame {
+                Sleep((MS_PER_SECOND as f32 * (target_seconds_per_frame - elapsed_seconds)) as u32);
+            } else {
+                // TODO(chris): missed frame
+            }
+
             StretchDIBits(
                 hdc,
                 0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
@@ -242,6 +267,8 @@ pub fn platform_main() -> PlatformResult {
                 &app_window_ctx.bitmap_info,
                 Gdi::DIB_RGB_COLORS,
                 Gdi::SRCCOPY);
+
+            last_counter = query_performance_counter();
         }
     }
 

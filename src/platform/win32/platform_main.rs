@@ -61,7 +61,9 @@ extern "system" fn window_proc(
 
     match msg {
         WM_DESTROY => {
-            unsafe { DestroyWindow(hwnd) };
+            // TODO(chris): see what happens if this fails but probably we don't
+            // really care assuming it involves the process dieing
+            let _ = unsafe { DestroyWindow(hwnd) };
             LRESULT(0)
         },
         WM_CLOSE => {
@@ -81,7 +83,7 @@ extern "system" fn window_proc(
                     hdc,
                     0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
                     0, 0, ctx.width, ctx.height,
-                    ctx.pixels.as_ptr() as *const ffi::c_void,
+                    Some(ctx.pixels.as_ptr() as *const ffi::c_void),
                     &ctx.bitmap_info,
                     Gdi::DIB_RGB_COLORS,
                     Gdi::SRCCOPY);
@@ -133,13 +135,13 @@ struct AppWindowContext {
 }
 
 pub fn platform_main() -> PlatformResult {
-    let title = "tinyrenderer-window";
+    let title = to_pcwstr("tinyrenderer-window");
     let wc_name = to_pcwstr("tinyrenderer-window-class");
 
     let main_module = unsafe { GetModuleHandleW(PCWSTR(ptr::null())) }?;
     let wc = WNDCLASSW {
         style: CS_HREDRAW | CS_VREDRAW | CS_OWNDC,
-        hInstance: main_module,
+        hInstance: main_module.into(),
         lpszClassName: wc_name,
         lpfnWndProc: Some(window_proc),
         cbWndExtra: mem::size_of::<*mut AppWindowContext>() as i32,
@@ -163,7 +165,7 @@ pub fn platform_main() -> PlatformResult {
             HWND(0),
             HMENU(0),
             main_module,
-            ptr::null()
+            None
         )
     };
 
@@ -179,7 +181,7 @@ pub fn platform_main() -> PlatformResult {
                 biHeight: -INITIAL_HEIGHT,
                 biPlanes: 1,
                 biBitCount: 32,
-                biCompression: BI_RGB as u32,
+                biCompression: BI_RGB.0,
                 ..Default::default()
             },
             ..Default::default()
@@ -199,6 +201,11 @@ pub fn platform_main() -> PlatformResult {
 
     const AFRICAN_HEAD_OBJ: &str = include_str!("../../../obj/african_head.obj");
     let (_, african_head_mesh) = obj::parse_obj::<(_, nom::error::ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
+
+    // const MS_PER_SECOND: u32 = 1000;
+    // let target_fps = 30;
+    // let frame_time = MS_PER_SECOND / target_fps;
+    // let mut last_frame_tick = 0;
 
     unsafe {
         while app_window_ctx.running {
@@ -231,7 +238,7 @@ pub fn platform_main() -> PlatformResult {
                 hdc,
                 0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
                 0, 0, app_window_ctx.width, app_window_ctx.height,
-                app_window_ctx.pixels.as_ptr() as *const ffi::c_void,
+                Some(app_window_ctx.pixels.as_ptr() as *const ffi::c_void),
                 &app_window_ctx.bitmap_info,
                 Gdi::DIB_RGB_COLORS,
                 Gdi::SRCCOPY);

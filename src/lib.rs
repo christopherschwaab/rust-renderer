@@ -1,7 +1,7 @@
 // NOTE(chris): this currently assumes the viewer is along the z axis.
 use std::{ops::{Index, Sub}, borrow::Borrow};
 
-use nom::error::ErrorKind;
+use obj::TriangleMesh;
 
 pub mod obj;
 
@@ -147,73 +147,46 @@ pub fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f
     ])
 }
 
-pub fn update_fb(fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, observer_position: &Coord<f32, 3>, focal_length: f32) {
-    // let t0: Triangle<f32, 3> = [[10.0, 10.0, 0.0], [10.0, 100.0, 0.0], [100.0, 10.0, 0.0]].into();
-    // draw_triangle(&t0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length);
+pub fn update_fb(
+    mesh: &TriangleMesh<u32>,
+    fb: &mut [u32],
+    fb_width: u32,
+    fb_height: u32,
+    viewscreen_width: f32,
+    viewscreen_height: f32,
+    observer_position: &Coord<f32, 3>,
+    focal_length: f32
+) {
+    for [v_ix0, v_ix1, v_ix2] in mesh.face_vertices.iter() {
+        let v0 = mesh.vertex(*v_ix0);
+        let v1 = mesh.vertex(*v_ix1);
+        let v2 = mesh.vertex(*v_ix2);
 
-    //let t1: Triangle<f32, 3> = [[0.0, 0.0, 0.0], [100.0, 0.0, 0.0], [0.0, 100.0, 0.0]].into();
-    //draw_triangle(&t1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
-
-    // let _back = square(&[
-    //     Coord([0.0, 0.0, 0.0]),
-    //     Coord([0.0, 0.5, 0.0]),
-    //     Coord([0.5, 0.5, 0.0]),
-    //     Coord([0.5, 0.0, 0.0]),
-    // ]);
-    // let bottom = square(&[
-    //     Coord([0.0, 0.0, 0.0]),
-    //     Coord([0.5, 0.0, 0.0]),
-    //     Coord([0.5, 0.0, 0.5]),
-    //     Coord([0.0, 0.0, 0.5]),
-    // ]);
-
-    //draw_triangle(&back.0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
-    //draw_triangle(&back.1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffffff);
-
-    // draw_triangle(&bottom.0, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
-    // draw_triangle(&bottom.1, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, 0xffffff00);
-
-    const AFRICAN_HEAD_OBJ: &str = include_str!("../obj/african_head.obj");
-    let (_, obj) = obj::parse_obj::<(_, ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
-
-    for [v_ix0, v_ix1, v_ix2] in obj.face_vertices.iter() {
-        let v0 = obj.vertex(*v_ix0);
-        let v1 = obj.vertex(*v_ix1);
-        let v2 = obj.vertex(*v_ix2);
-
-        // let color = 0xff << 24
-        //     | (rand::random::<u8>() as u32) << 16
-        //     | (rand::random::<u8>() as u32) << 8
-        //     | (rand::random::<u8>() as u32);
-        // draw_triangle(&Triangle([v0, v1, v2]), fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, color);
-
-        // TODO(chris): how to get rid of all the refs?
         let normal = (&v1 - &v0).cross(&v2 - &v0).normalize();
         const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
         let intensity = LIGHT_DIR.dot(normal);
         if intensity > 0.0 {
             let color = 0xff << 24
-                | ((intensity * 200.0) as u32) << 16
-                | ((intensity * 200.0) as u32) << 8
-                | ((intensity * 200.0) as u32);
+                | ((intensity * 255.0) as u32) << 16
+                | ((intensity * 255.0) as u32) << 8
+                | ((intensity * 255.0) as u32);
             draw_triangle(&Triangle([v0, v1, v2]), fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, color);
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut [u32], fb_width: u32, fb_height: u32, _viewscreen_width: f32, _viewscreen_height: f32, _observer_position: &Coord<f32, 3>, _focal_length: f32, color: u32) {
+pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, _observer_position: &Coord<f32, 3>, _focal_length: f32, color: u32) {
     // let projected_tri: Triangle<f32, 2> = Triangle([
     //     world2ndc(&project_perspective(&t.0[0], observer_position, focal_length), viewscreen_width, viewscreen_height),
     //     world2ndc(&project_perspective(&t.0[1], observer_position, focal_length), viewscreen_width, viewscreen_height),
     //     world2ndc(&project_perspective(&t.0[2], observer_position, focal_length), viewscreen_width, viewscreen_height),
     // ]);
-    // model's basically in ndc already
     let projected_tri: Triangle<f32, 2> = reduce_dimension(t);
     let screen_tri = Triangle([
-       ndc2screen(&projected_tri[0], fb_width, fb_height),
-       ndc2screen(&projected_tri[1], fb_width, fb_height),
-       ndc2screen(&projected_tri[2], fb_width, fb_height),
+       ndc2screen(&world2ndc(&projected_tri[0], viewscreen_width, viewscreen_height), fb_width, fb_height),
+       ndc2screen(&world2ndc(&projected_tri[1], viewscreen_width, viewscreen_height), fb_width, fb_height),
+       ndc2screen(&world2ndc(&projected_tri[2], viewscreen_width, viewscreen_height), fb_width, fb_height),
     ]);
     let bb = screen_tri.bounding_box();
 
@@ -241,8 +214,8 @@ pub fn world2ndc(p: &Coord<f32, 2>, viewscreen_width: f32, viewscreen_height: f3
 
 pub fn ndc2screen(p: &Coord<f32, 2>, fb_width: u32, fb_height: u32) -> Coord<u32, 2> {
     Coord([
-        ((p.x() + 1.0) * (fb_width / 2) as f32).round() as u32,
-        ((-p.y() + 1.0) * (fb_height / 2) as f32).round() as u32,
+        ((p.x() + 1.0) * (fb_width / 2) as f32) as u32,
+        ((-p.y() + 1.0) * (fb_height / 2) as f32) as u32,
     ])
 }
 

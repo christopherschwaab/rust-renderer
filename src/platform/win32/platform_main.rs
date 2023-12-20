@@ -4,7 +4,7 @@ use std::{
     ffi,
     hint::black_box,
 };
-use jordan_tinyrenderer::Coord;
+use jordan_tinyrenderer::{Coord, obj};
 use windows::{
     core::{self, PCWSTR},
     Win32::{
@@ -35,7 +35,7 @@ use windows::{
                 WM_DESTROY,
                 WM_CLOSE,
                 WM_PAINT,
-                WM_ACTIVATEAPP, DestroyWindow, PostQuitMessage,
+                WM_ACTIVATEAPP, DestroyWindow, PostQuitMessage, WM_SIZE,
             },
         },
         Foundation::{HWND, LRESULT, WPARAM, LPARAM}
@@ -75,7 +75,7 @@ extern "system" fn window_proc(
                 (hdc, paint.assume_init())
             };
 
-            let ctx = ctx.unwrap();
+            let ctx = ctx.expect("WM_PAINT called before window context was initialized");
             unsafe {
                 StretchDIBits(
                     hdc,
@@ -102,7 +102,21 @@ extern "system" fn window_proc(
         // },
         WM_ACTIVATEAPP => {
             LRESULT(0)
-        }
+        },
+        WM_SIZE => {
+            if let Some(ctx) = ctx {
+                const LO_MASK: usize = (1 << 16) - 1;
+                let width = (lparam.0 as usize & LO_MASK) as u16;
+                let height = ((lparam.0 as usize >> 16) & LO_MASK) as u16;
+                ctx.width = width as i32;
+                ctx.height = height as i32;
+                // TODO(chris): do we need to repaint here immediately?
+                ctx.pixels = vec![0; ctx.width as usize * ctx.height as usize];
+                ctx.bitmap_info.bmiHeader.biWidth = ctx.width;
+                ctx.bitmap_info.bmiHeader.biHeight = -ctx.height;
+            }
+            LRESULT(0)
+        },
         _ => unsafe { DefWindowProcW(hwnd, msg, wparam, lparam) },
     }
 }
@@ -183,29 +197,11 @@ pub fn platform_main() -> PlatformResult {
     const FOCAL_LENGTH: f32 = 5.0;
     let observer_position: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
 
-    let mut wrote_to_fb = false;
+    const AFRICAN_HEAD_OBJ: &str = include_str!("../../../obj/african_head.obj");
+    let (_, african_head_mesh) = obj::parse_obj::<(_, nom::error::ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
+
     unsafe {
-        // let mut x0 = 0;
-        // let mut last_update = SystemTime::UNIX_EPOCH;
-
         while app_window_ctx.running {
-            // let now = SystemTime::now();
-            // if match now.duration_since(last_update) {
-            //     Ok(d) => d.as_millis() > 16,
-            //     Err(_) => false,
-            // } {
-            //     for y in 10..100 {
-            //         for x in x0..x0+10 {
-            //             app_window_ctx.pixels[y * INITIAL_WIDTH as usize + x] = 0xff000000;
-            //         }
-            //         for x in x0+10..x0+100 {
-            //             app_window_ctx.pixels[y * INITIAL_WIDTH as usize + x] = 0xff0000ff;
-            //         }
-            //     }
-            //     last_update = now;
-            //     x0 = (x0 + 1) % (INITIAL_WIDTH - 100) as usize;
-            // }
-
             while PeekMessageW(&mut msg, HWND(0), 0, 0, PM_REMOVE).as_bool() {
                 if msg.message == WM_QUIT {
                     app_window_ctx.running = false;
@@ -219,21 +215,18 @@ pub fn platform_main() -> PlatformResult {
                 black_box(&mut app_window_ctx);
             }
 
-            if !wrote_to_fb {
-                const VIEWSCREEN_WIDTH: f32 = 16.0;
-                const VIEWSCREEN_HEIGHT: f32 = 9.0;
+            const VIEWSCREEN_WIDTH: f32 = 2.0;
+            const VIEWSCREEN_HEIGHT: f32 = 2.0;
 
-                println!("drawing to fb");
-                jordan_tinyrenderer::update_fb(
-                    &mut app_window_ctx.pixels,
-                    INITIAL_WIDTH as u32,
-                    INITIAL_HEIGHT as u32,
-                    VIEWSCREEN_WIDTH,
-                    VIEWSCREEN_HEIGHT,
-                    &observer_position,
-                    FOCAL_LENGTH);
-                wrote_to_fb = true;
-            }
+            jordan_tinyrenderer::update_fb(
+                &african_head_mesh,
+                &mut app_window_ctx.pixels,
+                app_window_ctx.width as u32,
+                app_window_ctx.height as u32,
+                VIEWSCREEN_WIDTH,
+                VIEWSCREEN_HEIGHT,
+                &observer_position,
+                FOCAL_LENGTH);
             StretchDIBits(
                 hdc,
                 0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,

@@ -499,5 +499,7 @@ f 24/1/42 25/2/29 26/3/27
         let tlast = obj.texture_coords(NUM_TEXTURE_COORDS as u32);
         assert_close!(tlast.x(), TLAST_EXPECTED.x(), 1e-6);
         assert_close!(tlast.y(), TLAST_EXPECTED.y(), 1e-6);
+
+        obj.face_texture_coords
     }
 }

@@ -152,6 +152,14 @@ fn rgb_gray(intensity: f32) -> u32 {
     0xff << 24 | rgb_intensity << 16 | rgb_intensity << 8 | rgb_intensity
 }
 
+fn rotate(v: Coord<f32, 3>, t: f32) -> Coord<f32, 3>{
+    Coord([
+        v.x() * t.cos() + v.z() * t.sin(),
+        v.y(),
+        -v.z() * t.sin() + v.z() * t.cos()
+    ])
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct DrawParameters {
     pub depth_test: bool,
@@ -161,6 +169,7 @@ pub struct DrawParameters {
 
 #[allow(clippy::too_many_arguments)]
 pub fn update_fb(
+    rotation: f32,
     draw_parameters: &DrawParameters,
     mesh: &TriangleMesh<u32>,
     z_buffer: &mut [f32],
@@ -174,9 +183,9 @@ pub fn update_fb(
 ) {
     fb.fill(0xff000000);
     for [v_ix0, v_ix1, v_ix2] in mesh.face_vertices.iter() {
-        let v0 = mesh.vertex(*v_ix0);
-        let v1 = mesh.vertex(*v_ix1);
-        let v2 = mesh.vertex(*v_ix2);
+        let v0 = rotate(mesh.vertex(*v_ix0), rotation);
+        let v1 = rotate(mesh.vertex(*v_ix1), rotation);
+        let v2 = rotate(mesh.vertex(*v_ix2), rotation);
 
         let normal = (&v1 - &v0).cross(&v2 - &v0).normalize();
         const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);

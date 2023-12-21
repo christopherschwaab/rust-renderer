@@ -99,6 +99,14 @@ extern "system" fn window_proc(
             if let Some(ctx) = ctx {
                 let vkcode = KeyboardAndMouse::VIRTUAL_KEY(wparam.0 as u16);
                 match vkcode {
+                    KeyboardAndMouse::VK_RIGHT => {
+                        const DELTA: f32 = 3.1415 * -(1.0 / 20.0);
+                        ctx.rotation += DELTA;
+                    },
+                    KeyboardAndMouse::VK_LEFT => {
+                        const DELTA: f32 = 3.1415 * (1.0 / 20.0);
+                        ctx.rotation += DELTA;
+                    },
                     KeyboardAndMouse::VK_P => {
                         ctx.draw_parameters.draw_perspective = !ctx.draw_parameters.draw_perspective;
                     },
@@ -144,6 +152,7 @@ struct AppWindowContext {
     height: i32,
     running: bool,
     draw_parameters: jordan_tinyrenderer::DrawParameters,
+    rotation: f32,
 }
 
 fn query_performance_counter() -> i64 {
@@ -198,6 +207,7 @@ pub fn platform_main() -> PlatformResult {
 
     const FB_SIZE: usize = INITIAL_WIDTH as usize * INITIAL_HEIGHT as usize;
     let mut app_window_ctx = AppWindowContext {
+        rotation: 3.1415,
         pixels: vec![0; FB_SIZE],
         width: INITIAL_WIDTH,
         height: INITIAL_HEIGHT,
@@ -262,6 +272,7 @@ pub fn platform_main() -> PlatformResult {
             const VIEWSCREEN_HEIGHT: f32 = 2.0 * SCALE;
 
             jordan_tinyrenderer::update_fb(
+                app_window_ctx.rotation,
                 &app_window_ctx.draw_parameters,
                 &african_head_mesh,
                 &mut vec![f32::MIN; FB_SIZE],

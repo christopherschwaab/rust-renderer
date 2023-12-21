@@ -350,18 +350,18 @@ mod test {
        let screen_bottom_right: Coord<u32, 2> = ndc2screen(&bottom_right, FB_WIDTH, FB_HEIGHT);
 
        assert_eq!(screen_top_right.x(), 800);
-       assert_eq!(screen_top_right.y(), 600);
+       assert_eq!(screen_top_right.y(), 0);
 
        assert_eq!(screen_top_left.x(), 0);
-       assert_eq!(screen_top_left.y(), 600);
+       assert_eq!(screen_top_left.y(), 0);
 
        assert_eq!(screen_center.x(), 800 / 2);
        assert_eq!(screen_center.y(), 600 / 2);
 
        assert_eq!(screen_bottom_right.x(), 800);
-       assert_eq!(screen_bottom_right.y(), 0);
+       assert_eq!(screen_bottom_right.y(), 600);
 
        assert_eq!(screen_bottom_left.x(), 0);
-       assert_eq!(screen_bottom_left.y(), 0);
+       assert_eq!(screen_bottom_left.y(), 600);
     }
 }

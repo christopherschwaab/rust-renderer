@@ -154,9 +154,9 @@ fn rgb_gray(intensity: f32) -> u32 {
 
 fn rotate(v: Coord<f32, 3>, t: f32) -> Coord<f32, 3>{
     Coord([
-        v.x() * t.cos() + v.z() * t.sin(),
+        v.x() * t.cos() - v.z() * t.sin(),
         v.y(),
-        -v.z() * t.sin() + v.z() * t.cos()
+        v.x() * t.sin() + v.z() * t.cos()
     ])
 }
 

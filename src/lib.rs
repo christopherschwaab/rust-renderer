@@ -125,7 +125,7 @@ impl<T> Triangle<T, 2> where T: Ord + Copy {
     }
 }
 
-fn reduce_dimension<T, const M: usize, const N: usize>(t: &Triangle<T, M>) -> Triangle<T, N> where T: Copy {
+pub fn reduce_dimension<T, const M: usize, const N: usize>(t: &Triangle<T, M>) -> Triangle<T, N> where T: Copy {
     Triangle([
         Coord(std::array::from_fn(|i| t.0[0][i])),
         Coord(std::array::from_fn(|i| t.0[1][i])),
@@ -137,26 +137,42 @@ pub fn project_orthographic(v: &Coord<f32, 3>) -> Coord<f32, 2> {
     Coord([v.x(), v.y()])
 }
 
-pub fn project_perspective(v: &Coord<f32, 3>, p: &Coord<f32, 3>, focal_length: f32) -> Coord<f32, 2> {
+pub fn project_perspective(v: &Coord<f32, 3>, camera_distance: f32, focal_length: f32) -> Coord<f32, 2> {
     // Eye at p looking at v: t*v + (1 - t)*p
     // TODO(chris): rotation
-    let t = focal_length / (p.z() - v.z());
+    let t = focal_length / (camera_distance - v.z());
     Coord([
         t * v.x(),
         t * v.y(),
     ])
 }
 
+fn rgb_gray(intensity: f32) -> u32 {
+    let rgb_intensity = (intensity * 255.0) as u32;
+    0xff << 24 | rgb_intensity << 16 | rgb_intensity << 8 | rgb_intensity
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DrawParameters {
+    pub depth_test: bool,
+    pub draw_depth_buffer: bool,
+    pub draw_perspective: bool,
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn update_fb(
+    draw_parameters: &DrawParameters,
     mesh: &TriangleMesh<u32>,
+    z_buffer: &mut [f32],
     fb: &mut [u32],
     fb_width: u32,
     fb_height: u32,
     viewscreen_width: f32,
     viewscreen_height: f32,
-    observer_position: &Coord<f32, 3>,
+    camera_distance: f32,
     focal_length: f32
 ) {
+    fb.fill(0xff000000);
     for [v_ix0, v_ix1, v_ix2] in mesh.face_vertices.iter() {
         let v0 = mesh.vertex(*v_ix0);
         let v1 = mesh.vertex(*v_ix1);
@@ -166,23 +182,39 @@ pub fn update_fb(
         const LIGHT_DIR: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
         let intensity = LIGHT_DIR.dot(normal);
         if intensity > 0.0 {
-            let color = 0xff << 24
-                | ((intensity * 255.0) as u32) << 16
-                | ((intensity * 255.0) as u32) << 8
-                | ((intensity * 255.0) as u32);
-            draw_triangle(&Triangle([v0, v1, v2]), fb, fb_width, fb_height, viewscreen_width, viewscreen_height, observer_position, focal_length, color);
+            let color = rgb_gray(intensity);
+            draw_triangle(draw_parameters, &Triangle([v0, v1, v2]), z_buffer, fb, fb_width, fb_height, viewscreen_width, viewscreen_height, camera_distance, focal_length, color);
         }
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut [u32], fb_width: u32, fb_height: u32, viewscreen_width: f32, viewscreen_height: f32, _observer_position: &Coord<f32, 3>, _focal_length: f32, color: u32) {
-    // let projected_tri: Triangle<f32, 2> = Triangle([
-    //     world2ndc(&project_perspective(&t.0[0], observer_position, focal_length), viewscreen_width, viewscreen_height),
-    //     world2ndc(&project_perspective(&t.0[1], observer_position, focal_length), viewscreen_width, viewscreen_height),
-    //     world2ndc(&project_perspective(&t.0[2], observer_position, focal_length), viewscreen_width, viewscreen_height),
-    // ]);
-    let projected_tri: Triangle<f32, 2> = reduce_dimension(t);
+pub fn draw_triangle(
+    draw_parameters: &DrawParameters,
+    t: &Triangle<f32, 3>,
+    z_buffer: &mut [f32],
+    fb: &mut [u32],
+    fb_width: u32,
+    fb_height: u32,
+    viewscreen_width: f32,
+    viewscreen_height: f32,
+    camera_distance: f32,
+    focal_length: f32,
+    color: u32
+) {
+    let projected_tri: Triangle<f32, 2> = if draw_parameters.draw_perspective {
+        Triangle([
+            project_perspective(&t.0[0], camera_distance, focal_length),
+            project_perspective(&t.0[1], camera_distance, focal_length),
+            project_perspective(&t.0[2], camera_distance, focal_length),
+        ])
+    } else {
+        Triangle([
+            project_orthographic(&t.0[0]),
+            project_orthographic(&t.0[1]),
+            project_orthographic(&t.0[2]),
+        ])
+    };
     let screen_tri = Triangle([
        ndc2screen(&world2ndc(&projected_tri[0], viewscreen_width, viewscreen_height), fb_width, fb_height),
        ndc2screen(&world2ndc(&projected_tri[1], viewscreen_width, viewscreen_height), fb_width, fb_height),
@@ -190,16 +222,19 @@ pub fn draw_triangle(t: &Triangle<f32, 3>, fb: &mut [u32], fb_width: u32, fb_hei
     ]);
     let bb = screen_tri.bounding_box();
 
-    // println!("got projected tri: {:?}", projected_tri);
-    // println!("got screen tri: {:?}", screen_tri);
-    for y in bb[0].y()..bb[1].y() {
-        for x in bb[0].x()..bb[1].x() {
+    for y in bb[0].y()..=bb[1].y() {
+        for x in bb[0].x()..=bb[1].x() {
             let Coord([w0, w1, w2]) = barycentric(&screen_tri, Coord([x, y]));
             if w0 < 0.0 || w1 < 0.0 || w2 < 0.0 {
                 continue
             }
 
-            fb[(y * fb_width + x) as usize] = color;
+            let z = w0*t[0].z() + w1*t[1].z() + w2*t[2].z();
+            let ix = (y * fb_width + x) as usize;
+            if !draw_parameters.depth_test || z_buffer[ix] < z {
+                z_buffer[ix] = z;
+                fb[ix] = if draw_parameters.draw_depth_buffer { rgb_gray(z) } else { color };
+            }
         }
     }
 }

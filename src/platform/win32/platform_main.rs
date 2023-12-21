@@ -27,7 +27,7 @@ use windows::{
                 PeekMessageW,
                 TranslateMessage,
                 DispatchMessageW,
-                WM_KEYDOWN,
+                WM_KEYUP,
                 DefWindowProcW,
                 SW_SHOW,
                 PM_REMOVE,
@@ -35,8 +35,11 @@ use windows::{
                 WM_DESTROY,
                 WM_CLOSE,
                 WM_PAINT,
-                WM_ACTIVATEAPP, DestroyWindow, PostQuitMessage, WM_SIZE,
-            },
+                WM_ACTIVATEAPP,
+                DestroyWindow,
+                PostQuitMessage,
+                WM_SIZE,
+            }, Input::KeyboardAndMouse,
         },
         Foundation::{HWND, LRESULT, WPARAM, LPARAM}
     },
@@ -92,16 +95,24 @@ extern "system" fn window_proc(
             };
             LRESULT(0)
         },
-        WM_KEYDOWN |
-        // WM_KEYUP => {
-        //     let vkcode = KeyboardAndMouse::VIRTUAL_KEY(wparam.0 as u16);
-        //     let _is_down = (lparam.0 as u32 & (1 << 31)) == 0;
-        //     // TODO(chris): decide on keymap and modify emu input state
-        //     match vkcode {
-        //         _ => {},
-        //     };
-        //     LRESULT(0)
-        // },
+        WM_KEYUP => {
+            if let Some(ctx) = ctx {
+                let vkcode = KeyboardAndMouse::VIRTUAL_KEY(wparam.0 as u16);
+                match vkcode {
+                    KeyboardAndMouse::VK_P => {
+                        ctx.draw_parameters.draw_perspective = !ctx.draw_parameters.draw_perspective;
+                    },
+                    KeyboardAndMouse::VK_Z => {
+                        ctx.draw_parameters.draw_depth_buffer = !ctx.draw_parameters.draw_depth_buffer;
+                    },
+                    KeyboardAndMouse::VK_T => {
+                        ctx.draw_parameters.depth_test = !ctx.draw_parameters.depth_test;
+                    },
+                    _ => {},
+                }
+            };
+            LRESULT(0)
+        },
         WM_ACTIVATEAPP => {
             LRESULT(0)
         },
@@ -132,6 +143,7 @@ struct AppWindowContext {
     width: i32,
     height: i32,
     running: bool,
+    draw_parameters: jordan_tinyrenderer::DrawParameters,
 }
 
 fn query_performance_counter() -> i64 {
@@ -184,11 +196,17 @@ pub fn platform_main() -> PlatformResult {
         )
     };
 
+    const FB_SIZE: usize = INITIAL_WIDTH as usize * INITIAL_HEIGHT as usize;
     let mut app_window_ctx = AppWindowContext {
-        pixels: vec![0; INITIAL_WIDTH as usize * INITIAL_HEIGHT as usize],
+        pixels: vec![0; FB_SIZE],
         width: INITIAL_WIDTH,
         height: INITIAL_HEIGHT,
         running: true,
+        draw_parameters: jordan_tinyrenderer::DrawParameters {
+            depth_test: true,
+            draw_depth_buffer: false,
+            draw_perspective: false,
+        },
         bitmap_info: BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
                 biSize: mem::size_of::<BITMAPINFOHEADER>() as u32,
@@ -211,8 +229,8 @@ pub fn platform_main() -> PlatformResult {
         return Err(core::Error::from_win32());
     }
 
-    const FOCAL_LENGTH: f32 = 5.0;
-    let observer_position: Coord<f32, 3> = Coord([0.0, 0.0, 1.0]);
+    const FOCAL_LENGTH: f32 = 1.0;
+    let observer_position: Coord<f32, 3> = Coord([0.0, 0.0, 1.3]);
 
     const AFRICAN_HEAD_OBJ: &str = include_str!("../../../obj/african_head.obj");
     let (_, african_head_mesh) = obj::parse_obj::<(_, nom::error::ErrorKind)>(AFRICAN_HEAD_OBJ).expect("unexpectedly failed to parse african_head.obj");
@@ -239,17 +257,20 @@ pub fn platform_main() -> PlatformResult {
                 black_box(&mut app_window_ctx);
             }
 
-            const VIEWSCREEN_WIDTH: f32 = 2.0;
-            const VIEWSCREEN_HEIGHT: f32 = 2.0;
+            const SCALE: f32 = 1.3;
+            const VIEWSCREEN_WIDTH: f32 = 2.5 * SCALE;
+            const VIEWSCREEN_HEIGHT: f32 = 2.0 * SCALE;
 
             jordan_tinyrenderer::update_fb(
+                &app_window_ctx.draw_parameters,
                 &african_head_mesh,
+                &mut vec![f32::MIN; FB_SIZE],
                 &mut app_window_ctx.pixels,
                 app_window_ctx.width as u32,
                 app_window_ctx.height as u32,
                 VIEWSCREEN_WIDTH,
                 VIEWSCREEN_HEIGHT,
-                &observer_position,
+                observer_position.z(),
                 FOCAL_LENGTH);
 
             let elapsed_seconds = (query_performance_counter() - last_counter) as f32 / perf_count_frequency as f32;

@@ -34,7 +34,7 @@ static void global_registry_handler(void *data, wl_registry *reg, uint32_t id, c
 	if (strcmp(iface, "wl_compositor") == 0) {
 		printf("  registering a wl_compositor_interface for id %d on iface %s (at verison 1)\n", id, iface);
 		compositor = (wl_compositor*) wl_registry_bind(reg, id, &wl_compositor_interface, 1);
-	} else if (strcmp(iface, "wl_shell") == 0) {
+	} else if (strcmp(iface, "wl_shell") == 0 || strcmp(iface, "org_kde_plasma_shell") == 0) {
 		shell = (wl_shell*) wl_registry_bind(reg, id, &wl_shell_interface, 1);
 	} else if (strcmp(iface, "wl_shm") == 0) {
 		shm = (wl_shm*) wl_registry_bind(reg, id, &wl_shm_interface, 1);

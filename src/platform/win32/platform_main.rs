@@ -74,25 +74,25 @@ extern "system" fn window_proc(
             LRESULT(0)
         },
         WM_PAINT => {
-            let mut paint: MaybeUninit<Gdi::PAINTSTRUCT> = MaybeUninit::uninit();
-            let (hdc, paint) = unsafe {
-                let hdc = Gdi::BeginPaint(hwnd, paint.as_mut_ptr());
-                (hdc, paint.assume_init())
-            };
+            // let mut paint: MaybeUninit<Gdi::PAINTSTRUCT> = MaybeUninit::uninit();
+            // let (hdc, paint) = unsafe {
+            //     let hdc = Gdi::BeginPaint(hwnd, paint.as_mut_ptr());
+            //     (hdc, paint.assume_init())
+            // };
 
-            let ctx = ctx.expect("WM_PAINT called before window context was initialized");
-            unsafe {
-                StretchDIBits(
-                    hdc,
-                    0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
-                    0, 0, ctx.width, ctx.height,
-                    Some(ctx.pixels.as_ptr() as *const ffi::c_void),
-                    &ctx.bitmap_info,
-                    Gdi::DIB_RGB_COLORS,
-                    Gdi::SRCCOPY);
+            // let ctx = ctx.expect("WM_PAINT called before window context was initialized");
+            // unsafe {
+            //     StretchDIBits(
+            //         hdc,
+            //         0, 0, INITIAL_WIDTH, INITIAL_HEIGHT,
+            //         0, 0, ctx.width, ctx.height,
+            //         Some(ctx.pixels.as_ptr() as *const ffi::c_void),
+            //         &ctx.bitmap_info,
+            //         Gdi::DIB_RGB_COLORS,
+            //         Gdi::SRCCOPY);
 
-                Gdi::EndPaint(hwnd, &paint)
-            };
+            //     Gdi::EndPaint(hwnd, &paint)
+            // };
             LRESULT(0)
         },
         WM_KEYUP => {

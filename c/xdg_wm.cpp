@@ -1,250 +1,181 @@
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/mman.h>
+#include <stdio.h>
 #include <fcntl.h>
+#include <time.h>
 #include <unistd.h>
-#include <errno.h>
+#include <sys/mman.h>
+#include <wayland-client-core.h>
+#include <wayland-client-protocol.h>
 #include <wayland-client.h>
 
 extern "C" {
 #include "xdg-shell.h"
 }
 
-wl_display *display = nullptr;
-wl_compositor *compositor = nullptr;
-wl_surface *surface = nullptr;
-wl_shell *shell = nullptr;
-xdg_wm_base *wm_base = nullptr;
-wl_shell_surface *shell_surface = nullptr;
-wl_shm *shm = nullptr;
-wl_buffer *buffer = nullptr;
-wl_callback *frame_callback = nullptr;
+wl_compositor *wl_compositor = nullptr;
+xdg_wm_base *xdg_wm_base = nullptr;
+wl_shm *wl_shm = nullptr;
 
-void *shm_data;
+int open_shm_file(const size_t size) {
+    wl_buffer *wl_buffer =  nullptr;
 
-static const int WIDTH = 480;
-static const int HEIGHT = 360;
+    struct timespec ts;
+    char *filename = nullptr;
+    if (asprintf(&filename, "/xdg_wm2_%d_%d", getpid(), clock_gettime(CLOCK_MONOTONIC, &ts)) == -1) {
+        fprintf(stderr, "failed to create shm filename: %m\n");
+        return -1;
+    }
+    const int fd = shm_open(filename, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR);
+    if (fd < 0) {
+        fprintf(stderr, "failed to create shm file: %m\n");
+        goto cleanup;
+    }
+    if (ftruncate(fd, size) < 0) {
+        close(fd);
+    }
 
-static void shm_format(void *data, wl_shm *wl_shm, uint32_t format) {
-  fprintf(stderr, "format %d\n", format);
+cleanup:
+    shm_unlink(filename);
+    free(filename);
+    return fd;
 }
 
-wl_shm_listener shm_listener = {
-  shm_format
+struct shm_pixel_buffer {
+    struct wl_buffer *wl_buffer;
+    struct wl_shm_pool *wl_shm_pool;
+    uint8_t *pool_buffer;
+    int width;
+    int height;
+    int fd;
 };
 
-// xdg_wm_base
-// destroy
-// create_positioner
-// get_xdg_surface
-// pong
+bool alloc_shm_pixel_buffer(int width, int height, shm_pixel_buffer *out_buffer) {
+    bool ok = false;
 
-// handle_ping,
-// handle_configure,
-// handle_popup_done
+    wl_buffer *wl_buffer =  nullptr;
+    const int bytes_per_pixel = 4;
+    const size_t size = width * height * bytes_per_pixel;
 
-static void global_registry_handler(void *data, wl_registry *reg, uint32_t id, const char *iface, uint32_t version) {
-  printf("got a registry event for %s id %d\n", iface, id);
-  if (strcmp(iface, "wl_compositor") == 0) {
-    printf("  registering a wl_compositor_interface for id %d on iface %s (at verison 1)\n", id, iface);
-    compositor = (wl_compositor*) wl_registry_bind(reg, id, &wl_compositor_interface, 1);
-  } else if (strcmp(iface, "wl_shell") == 0) {
-    shell = (wl_shell*) wl_registry_bind(reg, id, &wl_shell_interface, 1);
-  } else if (strcmp(iface, "xdg_wm_base") == 0) {
-    wm_base = (xdg_wm_base*) wl_registry_bind(reg, id, &xdg_wm_base_interface, 1);
-  } else if (strcmp(iface, "wl_shm") == 0) {
-    shm = (wl_shm*) wl_registry_bind(reg, id, &wl_shm_interface, 1);
-    wl_shm_add_listener(shm, &shm_listener, nullptr);
-  }
-}
+    int fd = open_shm_file(size);
+    if (fd < 0) {
+        return ok;
+    }
+    uint8_t *pool_buffer = static_cast<uint8_t *>(mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
+    wl_shm_pool *wl_shm_pool = nullptr;
+    if (pool_buffer == MAP_FAILED) {
+        fprintf(stderr, "mmap failed: %m\n");
+        goto cleanup;
+    }
 
-static void global_registry_remover(void *data, wl_registry *reg, uint32_t id) {
-  printf("got a registry losing event for %d\n", id);
-}
+    wl_shm_pool = wl_shm_create_pool(wl_shm, fd, size);
+    if (wl_shm_pool == nullptr) {
+        goto cleanup;
+    }
+    wl_buffer = wl_shm_pool_create_buffer(wl_shm_pool, 0, width, height, width * bytes_per_pixel, WL_SHM_FORMAT_XRGB8888);
 
-static int create_tmpfile_cloexec(char *tmpname) {
-  const int fd = mkostemp(tmpname, O_CLOEXEC);
-  if (fd >= 0) {
-    unlink(tmpname);
-  }
+    *out_buffer = {
+        wl_buffer,
+        wl_shm_pool,
+        pool_buffer,
+        width,
+        height,
+        fd,
+    };
+    ok = true;
 
-  return fd;
-}
-
-int os_create_anonymous_file(off_t size) {
-  static const char name_template[] = "/weston-shared-XXXXXX";
-  char *name = nullptr;
-
-  const char *path = getenv("XDG_RUNTIME_DIR");
-  if (path == nullptr) {
-    errno = ENOENT;
-    return -1;
-  }
-
-  name = (char*) malloc(strlen(path) + sizeof(name_template));
-  if (name == nullptr) {
-    return -1;
-  }
-
-  strcpy(name, path);
-  strcat(name, name_template);
-
-  int fd = create_tmpfile_cloexec(name);
-  free(name);
-
-  if (fd < 0) {
-    return -1;
-  }
-  if (ftruncate(fd, size) < 0) {
+cleanup:
     close(fd);
-    return -1;
-  }
-
-  return fd;
+    return ok;
 }
 
-static wl_buffer *create_buffer() {
-  const int stride = WIDTH * 4;
-  const int size = stride * HEIGHT;
-
-  wl_shm_pool *pool = nullptr;
-  wl_buffer *buf = nullptr;
-
-  const int fd = os_create_anonymous_file(size);
-  if (fd < 0) {
-    fprintf(stderr, "failed to create a buffer file for %d: %m\n", size);
-    exit(1);
-  }
-
-  shm_data = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-  if (shm_data == MAP_FAILED) {
-    fprintf(stderr, "mmap failed: %m\n");
-    close(fd);
-    exit(1);
-  }
-
-  pool = wl_shm_create_pool(shm, fd, size);
-  buf = wl_shm_pool_create_buffer(pool, 0, WIDTH, HEIGHT, stride, WL_SHM_FORMAT_XRGB8888);
-  wl_shm_pool_destroy(pool);
-  return buf;
+static void handle_notify_global(void *data, wl_registry *wl_registry, uint32_t name, const char *interface, uint32_t version) {
+    printf("got a registry event for %s id %d\n", interface, name);
+    if (strcmp(interface, "wl_compositor") == 0) {
+        wl_compositor = static_cast<struct wl_compositor *>(wl_registry_bind(wl_registry, name, &wl_compositor_interface, 1));
+    } else if (strcmp(interface, "xdg_wm_base") == 0) {
+        xdg_wm_base = static_cast<struct xdg_wm_base *>(wl_registry_bind(wl_registry, name, &xdg_wm_base_interface, 1));
+    } else if (strcmp(interface, "wl_shm") == 0) {
+        wl_shm = static_cast<struct wl_shm *>(wl_registry_bind(wl_registry, name, &wl_shm_interface, 1));
+    }
 }
 
-static void handle_ping(void *data, wl_shell_surface *shell_surface, uint32_t serial) {
-  wl_shell_surface_pong(shell_surface, serial);
-  fprintf(stderr, "Pinged and ponged\n");
+static void handle_configure(void *data, struct xdg_surface *xdg_surface, uint32_t serial) {
+    printf("got configure\n");
+    xdg_surface_ack_configure(xdg_surface, serial);
 }
 
-static void handle_configure(void *data, wl_shell_surface *shell_surface, uint32_t edges, int32_t width, int32_t height) {
-}
-
-static void handle_popup_done(void *data, wl_shell_surface *shell_surface) {
-}
-
-static const wl_shell_surface_listener shell_surface_listener = {
-  handle_ping,
-  handle_configure,
-  handle_popup_done
+static const wl_registry_listener wl_registry_listener = {
+  handle_notify_global,
+  nullptr
 };
 
-uint32_t pixel_value = 0x000000;
-static void paint() {
-  uint32_t *pixel = (uint32_t*) shm_data;
-
-  for (int n = 0; n < WIDTH * HEIGHT; ++n) {
-    *pixel++ = pixel_value;
-  }
-
-  pixel_value += 0x10101;
-  if (pixel_value > 0xffffff) {
-    pixel_value = 0x0;
-  }
-}
-
-static const struct wl_registry_listener registry_listener = {
-  global_registry_handler,
-  global_registry_remover,
+static const xdg_surface_listener xdg_surface_listener = {
+  handle_configure
 };
 
-static void create_window() {
-  buffer = create_buffer();
-
-  wl_surface_attach(surface, buffer, 0, 0);
-  wl_surface_commit(surface);
-}
-
-static void redraw(void *data, wl_callback *callback, uint32_t time);
-
-static const wl_callback_listener frame_listener = {
-  redraw
-};
-
-static void redraw(void *data, wl_callback *callback, uint32_t time) {
-  wl_callback_destroy(frame_callback);
-  wl_surface_damage(surface, 0, 0, WIDTH, HEIGHT);
-  paint();
-  frame_callback = wl_surface_frame(surface);
-  wl_surface_attach(surface, buffer, 0, 0);
-  wl_callback_add_listener(frame_callback, &frame_listener, nullptr);
-  wl_surface_commit(surface);
+void draw(shm_pixel_buffer *buf) {
+    uint32_t *data = (uint32_t *) buf->pool_buffer;
+    for (int y = 0; y < buf->height; ++y) {
+        for (int x = 0; x < buf->width; ++x) {
+          if ((x + y / 8 * 8) % 16 < 8) {
+            data[y * buf->width + x] = 0xFF666666;
+          } else {
+            data[y * buf->width + x] = 0xFFEEEEEE;
+          }
+        }
+    }
 }
 
 int main(int argc, char **argv) {
-  display = wl_display_connect(nullptr);
-  if (display == nullptr) {
-    fprintf(stderr, "failed to connect to display\n");
-    exit(1);
-  }
-  printf("connected to display\n");
+    wl_display *display = wl_display_connect(nullptr);
+    if (display == nullptr) {
+      fprintf(stderr, "failed to connect to display\n");
+      exit(1);
+    }
 
-  wl_registry *registry = wl_display_get_registry(display);
-  wl_registry_add_listener(registry, &registry_listener, nullptr);
+    wl_registry *registry = wl_display_get_registry(display);
+    wl_registry_add_listener(registry, &wl_registry_listener, nullptr);
 
-  wl_display_dispatch(display);
-  wl_display_roundtrip(display);
+    wl_display_roundtrip(display);
+    wl_display_dispatch(display);
 
-  if (compositor == nullptr) {
-    fprintf(stderr, "failed to find compositor\n");
-    exit(1);
-  } else {
-    fprintf(stderr, "found compositor\n");
-  }
+    wl_surface *wl_surface = wl_compositor_create_surface(wl_compositor);
+    if (wl_surface == nullptr) {
+      fprintf(stderr, "failed to create surface\n");
+      exit(1);
+    }
 
-  surface = wl_compositor_create_surface(compositor);
-  if (surface == nullptr) {
-    fprintf(stderr, "failed to create surface\n");
-    exit(1);
-  } else {
-    fprintf(stderr, "created surface\n");
-  }
+    xdg_surface *xdg_surface = xdg_wm_base_get_xdg_surface(xdg_wm_base, wl_surface);
+    if (xdg_surface == nullptr) {
+        fprintf(stderr, "failed to create xdg_surface\n");
+        exit(1);
+    }
 
-  if (shell == nullptr) {
-    fprintf(stderr, "no wayland shell\n");
-    exit(1);
-  }
+    xdg_toplevel *xdg_toplevel = xdg_surface_get_toplevel(xdg_surface);
+    if (xdg_toplevel == nullptr) {
+        fprintf(stderr, "failed to create xdg_toplevel\n");
+        exit(1);
+    }
 
-  shell_surface = wl_shell_get_shell_surface(shell, surface);
-  if (shell_surface == nullptr) {
-    fprintf(stderr, "failed to create shell surface\n");
-    exit(1);
-  } else {
-    fprintf(stderr, "created shell surface\n");
-  }
-  wl_shell_surface_set_toplevel(shell_surface);
-  wl_shell_surface_add_listener(shell_surface, &shell_surface_listener, nullptr);
+    xdg_surface_add_listener(xdg_surface, &xdg_surface_listener, nullptr);
 
-  frame_callback = wl_surface_frame(surface);
-  wl_callback_add_listener(frame_callback, &frame_listener, nullptr);
+    shm_pixel_buffer shm_pixel_buffer = {};
+    const int width = 480;
+    const int height = 360;
+    if (!alloc_shm_pixel_buffer(width, height, &shm_pixel_buffer)) {
+        fprintf(stderr, "failed to allocate shm pixel buffer\n");
+        exit(1);
+    }
 
-  create_window();
-  redraw(nullptr, nullptr, 0);
+    draw(&shm_pixel_buffer);
+    wl_surface_attach(wl_surface, shm_pixel_buffer.wl_buffer, 0, 0);
+    wl_surface_commit(wl_surface);
+    while (wl_display_dispatch(display) != -1) {
+        ;
+    }
 
-  while (wl_display_dispatch(display) != -1) {
-    ;
-  }
+    wl_display_disconnect(display);
 
-  wl_display_disconnect(display);
-  printf("disconnected from display\n");
-
-  exit(0);
+    return 0;
 }
